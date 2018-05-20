@@ -18,14 +18,26 @@ int main()
     
     fs_t filesystem;
     
-    fs_create(&operations, 16 * 1024 * 1024, &filesystem);
+    if (fs_create(&operations, 16 * 1024, &filesystem) != FS_OK)
+    {
+        printf("Error while creating filesystem!\n");
+        return -1;
+    }
+    
+    for (int i = 0; i < 128; i++)
+    {
+        
+        printf("%d\n", fs_file(&filesystem));
+    }
+    
+    fs_close(&filesystem);
     
     return 0;
 }
 
 int real_init(void** result_state)
 {
-    FILE* file = fopen(FILE_NAME, "rw");
+    FILE* file = fopen(FILE_NAME, "w+");
     
     if (file == NULL) return FS_DISK_INIT_ERROR;
     
