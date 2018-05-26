@@ -40,6 +40,10 @@ typedef struct
 {
     uint32_t    sectors_count;
     uint32_t    root_node;
+    uint32_t    table_sector_start;
+    uint32_t    table_sectors_count;
+    uint32_t    clusters_sector_start;
+    uint32_t    clusters_count;
 } _fs_bootstrap_sector_t;
 
 typedef struct
@@ -133,8 +137,31 @@ int fs_create(const fs_disk_operations_t* operations, size_t size, fs_t* result_
     _fs_bootstrap_sector_t* bootstrap = (_fs_bootstrap_sector_t*)result_fs->buffer;
     bootstrap->sectors_count = result_fs->sectors_count;
     bootstrap->root_node = result_fs->root_node;
+    bootstrap->table_sector_start = result_fs->table_sector_start;
+    bootstrap->table_sectors_count = result_fs->table_sectors_count;
+    bootstrap->clusters_sector_start = result_fs->clusters_sector_start;
+    bootstrap->clusters_count = result_fs->clusters_count;
     
     FS_CHECK_ERROR(_fs_write_disk_buffer(result_fs, 0, sizeof(_fs_bootstrap_sector_t)));
+    
+    return FS_OK;
+}
+
+int fs_open(const fs_disk_operations_t* operations, fs_t* result_fs)
+{
+    result_fs->operations = *operations;
+    
+    FS_CHECK_ERROR(result_fs->operations.init(&result_fs->state));
+    
+    FS_CHECK_ERROR(_fs_read_sector_buffer(result_fs, 0));
+    
+    _fs_bootstrap_sector_t* bootstrap = (_fs_bootstrap_sector_t*)result_fs->buffer;
+    result_fs->sectors_count = bootstrap->sectors_count;
+    result_fs->root_node = bootstrap->root_node;
+    result_fs->table_sector_start = bootstrap->table_sector_start;
+    result_fs->table_sectors_count = bootstrap->table_sectors_count;
+    result_fs->clusters_sector_start = bootstrap->clusters_sector_start;
+    result_fs->clusters_count = bootstrap->clusters_count;
     
     return FS_OK;
 }

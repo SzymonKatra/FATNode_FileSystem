@@ -4,7 +4,8 @@
 #include <string.h>
 #include "fs.h"
 
-int real_init(void ** result_state);
+int real_init_create(void ** result_state);
+int real_init_open(void ** result_state);
 int real_read(void* state, void* buffer, size_t position, size_t size);
 int real_write(void* state, const void* buffer, size_t position, size_t size);
 int real_close(void* state);
@@ -12,18 +13,21 @@ int real_close(void* state);
 int main()
 {
     fs_disk_operations_t operations;
-    operations.init = &real_init;
+    //operations.init = &real_init_create;
+    operations.init = &real_init_open;
     operations.read = &real_read;
     operations.write = &real_write;
     operations.close = &real_close;
     
     fs_t filesystem;
     
-    if (fs_create(&operations, 16 * 1024, &filesystem) != FS_OK)
+    /*if (fs_create(&operations, 16 * 1024, &filesystem) != FS_OK)
     {
         printf("Error while creating filesystem!\n");
         return -1;
-    }
+    }*/
+    //fs_create(&operations, 16 * 1024, &filesystem);
+    fs_open(&operations, &filesystem);
     fs_mkdir(&filesystem, "/dupa");
     fs_mkdir(&filesystem, "/aaaa");
     fs_mkdir(&filesystem, "/bbbb");
@@ -49,7 +53,7 @@ int main()
     fs_file_write(&filesystem, &f, buffer, 555, &written);
     fs_file_close(&filesystem, &f);
     
-    printf("bytes written: %d\n", written);
+    printf("bytes written: %ld\n", written);
     
     fs_file_open(&filesystem, "/cccc/ssss", FS_CREATE, &f);
     fs_file_close(&filesystem, &f);
@@ -72,13 +76,13 @@ int main()
     fs_file_write(&filesystem, &f, buffer, 134, &written);
     fs_file_close(&filesystem, &f);
     
-    printf("bytes written: %d\n", written);
+    printf("bytes written: %ld\n", written);
     
     fs_file_open(&filesystem, "/aaaa/x", 0, &f);
     fs_file_read(&filesystem, &f, buffer, 40, &read);
     fs_file_close(&filesystem, &f);
     
-    printf("bytes read: %d\n", read);
+    printf("bytes read: %ld\n", read);
     
     const char* tekst = "Wsadzmy do naszego pliku jakis przykladowy tekst....";
     size_t len = strlen(tekst) + 1;
@@ -125,6 +129,7 @@ int main()
     fs_remove(&filesystem, "/bbbb");
     fs_remove(&filesystem, "/dupa");
     fs_mkdir(&filesystem, "/a/b/c/d/");
+    fs_remove(&filesystem, "/a");
     
     printf("er %d\n", fs_dir_entries_count(&filesystem, "/cccc/ssss", &cnt));
     printf("%d\n", cnt);
@@ -142,9 +147,19 @@ int main()
     return 0;
 }
 
-int real_init(void** result_state)
+int real_init_create(void** result_state)
 {
     FILE* file = fopen(FILE_NAME, "w+");
+    
+    if (file == NULL) return FS_DISK_INIT_ERROR;
+    
+    *result_state = file;
+    
+    return FS_OK;
+}
+int real_init_open(void** result_state)
+{
+    FILE* file = fopen(FILE_NAME, "r+");
     
     if (file == NULL) return FS_DISK_INIT_ERROR;
     
