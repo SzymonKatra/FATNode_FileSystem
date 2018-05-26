@@ -7,8 +7,17 @@
 #define FS_DISK_WRITE_ERROR     3
 #define FS_DISK_CLOSE_ERROR     4
 #define FS_FULL                 5
+#define FS_NOT_A_DIRECTORY      6
+#define FS_WRONG_PATH           7
+#define FS_PATH_TOO_LONG        8
+#define FS_DIR_NAME_TOO_LONG    9
 
-#define FS_SECTOR_SIZE          512
+#define FS_SECTOR_SIZE          128
+
+#define FS_DIR_NAME_MAX_LENGTH  27
+
+#define FS_FILE     1
+#define FS_DIR      2
 
 #include <stdint.h>
 #include <stddef.h>
@@ -39,10 +48,20 @@ typedef struct
     char        buffer[FS_SECTOR_SIZE];
 } fs_t;
 
+typedef struct
+{
+    char        name[28];
+    uint32_t    node;
+    uint8_t     type;
+} fs_dir_entry_t;
+
 int fs_create(const fs_disk_operations_t* operations, size_t size, fs_t* result_fs);
 int fs_open(const fs_disk_operations_t* operations, fs_t* result_fs);
 
 int fs_close(fs_t* fs);
+
+int fs_mkdir(fs_t* fs, const char* path);
+int fs_dir_entries_count(fs_t* fs, const char* path, uint32_t* result);
 
 
 uint32_t fs_file(fs_t* fs);

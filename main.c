@@ -23,11 +23,22 @@ int main()
         printf("Error while creating filesystem!\n");
         return -1;
     }
+    int e;
+    e = fs_mkdir(&filesystem, "/dupa");printf("%d\n", e);
+    fs_mkdir(&filesystem, "/aaaa");
+    fs_mkdir(&filesystem, "/bbbb");
+    fs_mkdir(&filesystem, "/cccc");
+    fs_mkdir(&filesystem, "/cccc/c");
+    fs_mkdir(&filesystem, "/cccc/d");
+    
+    uint32_t cnt;
+    fs_dir_entries_count(&filesystem, "/", &cnt);
+    printf("%d", cnt);
     
     for (int i = 0; i < 128; i++)
     {
         
-        printf("%d\n", fs_file(&filesystem));
+        //printf("%d\n", fs_file(&filesystem));
     }
     
     fs_close(&filesystem);
