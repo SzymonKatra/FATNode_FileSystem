@@ -68,11 +68,15 @@ static int _fs_create_node(fs_t* fs, uint32_t* result_node_number);
 static int _fs_create_dir(fs_t* fs, uint32_t node, uint32_t parent_node, uint32_t* result_cluster);
 static int _fs_dir_find_entry(fs_t* fs, uint32_t dir_node, const char* entry_name, uint8_t* result_code, uint32_t* result_node);
 static int _fs_dir_add_entry(fs_t* fs, uint32_t dir_node, const char* entry_name, uint32_t entry_node);
+static int _fs_dir_remove_entry(fs_t* fs, uint32_t dir_node, const char* entry_name, uint32_t* removed_entry_node);
 static int _fs_find_node(fs_t* fs, const char* path, uint32_t* result_node, uint8_t* result_code);
+static int _fs_free_node(fs_t* fs, uint32_t node);
+static int _fs_recursive_remove(fs_t* fs, uint32_t node);
 
 static uint32_t _fs_cluster_to_sector(fs_t* fs, uint32_t cluster);
 static size_t _fs_cluster_state_pos(fs_t* fs, uint32_t cluster);
 static size_t _fs_node_pos(fs_t* fs, uint32_t node_number);
+static int _fs_split_path(const char* path, char* dirpath, char* filename);
 
 static int _fs_write_state(fs_t* fs, uint32_t cluster, uint32_t new_state);
 static int _fs_write_node(fs_t* fs, uint32_t node_number, const _fs_node_t* node_data);
@@ -169,7 +173,7 @@ int fs_mkdir(fs_t* fs, const char* path)
             _fs_node_t new_node_data;
             FS_CHECK_ERROR(_fs_read_node(fs, new_node, &new_node_data));
             new_node_data.type = FS_NODE_TYPE_DIR;
-            new_node_data.links_count = 1;
+            new_node_data.links_count = 2;
             new_node_data.modification_time = (uint32_t)time(NULL);
             
             FS_CHECK_ERROR(_fs_create_dir(fs, new_node, node, &new_node_data.cluster_index));
@@ -177,6 +181,11 @@ int fs_mkdir(fs_t* fs, const char* path)
             FS_CHECK_ERROR(_fs_write_node(fs, new_node, &new_node_data));
             
             FS_CHECK_ERROR(_fs_dir_add_entry(fs, node, name, new_node));
+            
+            _fs_node_t node_data;
+            FS_CHECK_ERROR(_fs_read_node(fs, node, &node_data));
+            node_data.links_count++;
+            FS_CHECK_ERROR(_fs_write_node(fs, node, &node_data));
             
             node = new_node;
         }
@@ -201,7 +210,7 @@ int fs_dir_entries_count(fs_t* fs, const char* path, uint32_t* result)
         switch (status)
         {
             case FS_FIND_FILE: return FS_NOT_A_DIRECTORY;
-            case FS_FIND_NOT_EXISTS: return FS_WRONG_PATH;
+            case FS_FIND_NOT_EXISTS: return FS_NOT_EXISTS;
         }
     }
     
@@ -240,7 +249,7 @@ int fs_dir_list(fs_t* fs, const char* path, fs_dir_entry_t* results, size_t* cou
         switch (status)
         {
             case FS_FIND_FILE: return FS_NOT_A_DIRECTORY;
-            case FS_FIND_NOT_EXISTS: return FS_WRONG_PATH;
+            case FS_FIND_NOT_EXISTS: return FS_NOT_EXISTS;
         }
     }
     
@@ -282,6 +291,83 @@ int fs_dir_list(fs_t* fs, const char* path, fs_dir_entry_t* results, size_t* cou
     return FS_OK;
 }
 
+int fs_link(fs_t* fs, const char* path, uint32_t node)
+{
+    char dirpath[256];
+    char filename[FS_NAME_MAX_LENGTH + 1];
+        
+    FS_CHECK_ERROR(_fs_split_path(path, dirpath, filename));
+    
+    _fs_node_t node_data;
+    FS_CHECK_ERROR(_fs_read_node(fs, node, &node_data));
+    if (node_data.type != FS_NODE_TYPE_FILE) return FS_NOT_A_FILE;
+    node_data.links_count++;
+    FS_CHECK_ERROR(_fs_write_node(fs, node, &node_data));
+    
+    uint32_t dir_node;
+    uint8_t dir_result;
+    FS_CHECK_ERROR(_fs_find_node(fs, dirpath, &dir_node, &dir_result));
+    
+    FS_CHECK_ERROR(_fs_dir_add_entry(fs, dir_node, filename, node));
+    
+    return FS_OK;
+}
+
+int fs_entry_info(fs_t* fs, const char* path, fs_dir_entry_t* result)
+{
+    char dirpath[256];
+    FS_CHECK_ERROR(_fs_split_path(path, dirpath, result->name));
+    
+    uint32_t node;
+    uint8_t status; 
+    FS_CHECK_ERROR(_fs_find_node(fs, path, &node, &status));
+    if (status == FS_FIND_NOT_EXISTS) return FS_NOT_EXISTS; 
+    result->node = node;   
+    
+    _fs_node_t node_data;
+    FS_CHECK_ERROR(_fs_read_node(fs, node, &node_data));  
+    result->type = node_data.type == FS_NODE_TYPE_DIR ? FS_DIR : FS_FILE;
+    
+    return FS_OK;
+}
+
+int fs_remove(fs_t* fs, const char* path)
+{
+    if (strcmp(path, "/") == 0) return FS_WRONG_PATH;
+    
+    char dirpath[256];
+    char name[FS_NAME_MAX_LENGTH + 1];
+    FS_CHECK_ERROR(_fs_split_path(path, dirpath, name));
+    
+    uint32_t dir_node;
+    uint8_t dir_status;
+    FS_CHECK_ERROR(_fs_find_node(fs, dirpath, &dir_node, &dir_status));
+    if (dir_status != FS_FIND_DIR) return FS_NOT_A_DIRECTORY;
+    
+    uint32_t removed_node;
+    FS_CHECK_ERROR(_fs_dir_remove_entry(fs, dir_node, name, &removed_node));
+    
+    _fs_node_t node_data;
+    FS_CHECK_ERROR(_fs_read_node(fs, removed_node, &node_data));
+    node_data.links_count--;
+    FS_CHECK_ERROR(_fs_write_node(fs, removed_node, &node_data));
+    
+    if (node_data.type == FS_NODE_TYPE_FILE)
+    {
+        if (node_data.links_count == 0)
+        {
+            FS_CHECK_ERROR(_fs_free_node(fs, removed_node));
+        }
+    }
+    else if (node_data.type == FS_NODE_TYPE_DIR)
+    {
+        FS_CHECK_ERROR(_fs_recursive_remove(fs, removed_node));
+    }
+    
+    return FS_OK;
+}
+
+
 int fs_file_open(fs_t* fs, const char* path, uint8_t flags, fs_file_t* result)
 {
     size_t len = strlen(path);
@@ -294,24 +380,17 @@ int fs_file_open(fs_t* fs, const char* path, uint8_t flags, fs_file_t* result)
     if (status == FS_FIND_DIR) return FS_NOT_A_FILE;
     else if (status == FS_FIND_NOT_EXISTS)
     {
-        if (!(flags & FS_CREATE)) return FS_FILE_NOT_EXISTS;
+        if (!(flags & FS_CREATE)) return FS_NOT_EXISTS;
         
-        // create file
         char dirpath[256];
         char filename[FS_NAME_MAX_LENGTH + 1];
         
-        strcpy(dirpath, path);
-        char* separator = strrchr(dirpath, '/');
-        
-        strcpy(filename, separator + 1);
-        
-        *(separator + 1) = 0;
-        
-        if (strlen(filename) > FS_NAME_MAX_LENGTH) return FS_NAME_TOO_LONG;
+        // create file
+        FS_CHECK_ERROR(_fs_split_path(path, dirpath, filename));
         
         uint32_t dir_node;
         uint8_t dir_status;
-        FS_CHECK_ERROR(_fs_find_node(fs, path, &dir_node, &dir_status));
+        FS_CHECK_ERROR(_fs_find_node(fs, dirpath, &dir_node, &dir_status));
         
         // previous _fs_find_node finished successfully so dir_node for sure is a directory
         
@@ -533,10 +612,6 @@ int fs_file_close(fs_t* fs, fs_file_t* file)
     return FS_OK;
 }
 
-int fs_link(fs_t* fs, const char* path, uint32_t node)
-{
-    
-}
 
 static int _fs_find_free_cluster(fs_t* fs, uint32_t* result)
 {
@@ -760,11 +835,47 @@ static int _fs_dir_add_entry(fs_t* fs, uint32_t dir_node, const char* entry_name
     return FS_OK;
 }
 
+static int _fs_dir_remove_entry(fs_t* fs, uint32_t dir_node, const char* entry_name, uint32_t* removed_entry_node)
+{
+    _fs_node_t node_data;
+    
+    FS_CHECK_ERROR(_fs_read_node(fs, dir_node, &node_data));
+    
+    if (node_data.type != FS_NODE_TYPE_DIR) return FS_NOT_A_DIRECTORY;
+    
+    uint32_t current_cluster = node_data.cluster_index;
+    uint32_t prev_cluster = FS_CLUSTER_INVALID;
+    _fs_dir_cluster_t* dir = (_fs_dir_cluster_t*)fs->buffer;
+    do
+    {
+        FS_CHECK_ERROR(_fs_read_cluster_buffer(fs, current_cluster));
+        
+        for (size_t i = 0; i < FS_REFERENCES_IN_CLUSTER; i++)
+        {
+            if (strcmp(dir->ref[i].name, entry_name) == 0)
+            {
+                *removed_entry_node = dir->ref[i].node;
+                memset(&dir->ref[i], 0, sizeof(_fs_reference_t));
+                
+                FS_CHECK_ERROR(_fs_write_cluster_buffer(fs, current_cluster));
+                
+                return FS_OK;
+            }
+        }
+        
+        prev_cluster = current_cluster;
+        FS_CHECK_ERROR(_fs_read_state(fs, current_cluster, &current_cluster));
+    } while (current_cluster != FS_CLUSTER_EOF);
+    
+    return FS_NOT_EXISTS;
+}
+
 static int _fs_find_node(fs_t* fs, const char* path, uint32_t* result_node, uint8_t* result_code)
 {
     if (path[0] != '/') return FS_WRONG_PATH;
     
     *result_node = fs->root_node;
+    *result_code = FS_FIND_DIR;
     
     if (strlen(path) > 255) return FS_PATH_TOO_LONG;
     
@@ -797,6 +908,95 @@ static int _fs_find_node(fs_t* fs, const char* path, uint32_t* result_node, uint
     return FS_OK;
 }
 
+static int _fs_free_node(fs_t* fs, uint32_t node)
+{
+    _fs_node_t node_data;
+    FS_CHECK_ERROR(_fs_read_node(fs, node, &node_data));
+    
+    // free up all clusters
+    uint32_t cluster_state;
+    FS_CHECK_ERROR(_fs_read_state(fs, node_data.cluster_index, &cluster_state));
+    while (cluster_state != FS_CLUSTER_EOF)
+    {
+        uint32_t next_cluster;
+        FS_CHECK_ERROR(_fs_read_state(fs, cluster_state, &next_cluster));
+        FS_CHECK_ERROR(_fs_write_state(fs, cluster_state, FS_CLUSTER_EMPTY));
+        cluster_state = next_cluster;
+    }
+        
+    FS_CHECK_ERROR(_fs_write_state(fs, node_data.cluster_index, FS_CLUSTER_EMPTY));
+    
+    // change state of node cluster
+    uint32_t cluster_node = node >> 8;
+    uint32_t node_cluster_state;
+    FS_CHECK_ERROR(_fs_read_state(fs, cluster_node, &node_cluster_state));
+    node_cluster_state--;
+    if (node_cluster_state == FS_CLUSTER_NODE_BEGIN) node_cluster_state = FS_CLUSTER_EMPTY;
+    FS_CHECK_ERROR(_fs_write_state(fs, cluster_node, node_cluster_state));
+    
+    memset(&node_data, 0,  sizeof(_fs_node_t));
+    
+    FS_CHECK_ERROR(_fs_write_node(fs, node, &node_data));
+}
+
+static int _fs_recursive_remove(fs_t* fs, uint32_t node)
+{
+    _fs_node_t node_data;
+    FS_CHECK_ERROR(_fs_read_node(fs, node, &node_data));
+    
+    if (node_data.type != FS_NODE_TYPE_DIR) return FS_NOT_A_DIRECTORY;
+    
+    node_data.links_count--;
+    FS_CHECK_ERROR(_fs_write_node(fs, node, &node_data));
+    
+    _fs_dir_cluster_t dir;
+
+    uint32_t current_cluster = node_data.cluster_index;
+    do
+    {
+        size_t disk_pos = FS_SECTOR_POS(_fs_cluster_to_sector(fs, current_cluster));
+        FS_CHECK_ERROR(_fs_read_disk(fs, &dir, disk_pos, FS_SECTOR_SIZE));
+
+        for (size_t i = 0; i < FS_REFERENCES_IN_CLUSTER; i++)
+        {
+            if (dir.ref[i].name[0] != 0)
+            { 
+                if (strcmp(dir.ref[i].name, ".") == 0) continue;
+                
+                _fs_node_t child_node_data;
+                FS_CHECK_ERROR(_fs_read_node(fs, dir.ref[i].node, &child_node_data));
+                child_node_data.links_count--;
+                FS_CHECK_ERROR(_fs_write_node(fs, dir.ref[i].node, &child_node_data));
+                
+                if (strcmp(dir.ref[i].name, "..") == 0) continue; // do not remove parent recursively
+                
+                if (child_node_data.type == FS_NODE_TYPE_DIR)
+                {
+                    FS_CHECK_ERROR(_fs_recursive_remove(fs, dir.ref[i].node));
+                }
+                else if (child_node_data.type == FS_NODE_TYPE_FILE)
+                {
+                    if (child_node_data.links_count == 0)
+                    {
+                        FS_CHECK_ERROR(_fs_free_node(fs, dir.ref[i].node));
+                    }
+                }
+            }
+        }
+    
+        FS_CHECK_ERROR(_fs_read_state(fs, current_cluster, &current_cluster));
+    }
+    while (current_cluster != FS_CLUSTER_EOF);
+    
+    FS_CHECK_ERROR(_fs_read_node(fs, node, &node_data));
+    if (node_data.links_count == 0)
+    {
+        FS_CHECK_ERROR(_fs_free_node(fs, node));
+    }
+    
+    return FS_OK;
+}
+
 static uint32_t _fs_cluster_to_sector(fs_t* fs, uint32_t cluster)
 {
     return fs->clusters_sector_start + cluster;
@@ -812,6 +1012,21 @@ static size_t _fs_node_pos(fs_t* fs, uint32_t node_number)
     uint32_t sector = _fs_cluster_to_sector(fs, cluster);
     
     return FS_SECTOR_POS(sector) + index * sizeof(_fs_node_t);
+}
+static int _fs_split_path(const char* path, char* dirpath, char* filename)
+{
+    if (strlen(path) > 255) return FS_PATH_TOO_LONG;
+        
+    strcpy(dirpath, path);
+    char* separator = strrchr(dirpath, '/');
+        
+    strcpy(filename, separator + 1);
+        
+    *(separator + 1) = 0;
+        
+    if (strlen(filename) > FS_NAME_MAX_LENGTH) return FS_NAME_TOO_LONG;
+    
+    return FS_OK;
 }
 
 static int _fs_write_state(fs_t* fs, uint32_t cluster, uint32_t new_state)

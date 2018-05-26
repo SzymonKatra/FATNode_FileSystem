@@ -13,7 +13,7 @@
 #define FS_NAME_TOO_LONG        9
 #define FS_BUFFER_TOO_SMALL     10
 #define FS_NOT_A_FILE           11
-#define FS_FILE_NOT_EXISTS      12
+#define FS_NOT_EXISTS           12
 #define FS_FILE_ALREADY_CLOSED  13
 #define FS_EOF                  14
 
@@ -62,7 +62,7 @@ typedef struct
 
 typedef struct
 {
-    char        name[28];
+    char        name[FS_NAME_MAX_LENGTH + 1];
     uint32_t    node;
     uint8_t     type;
 } fs_dir_entry_t;
@@ -86,6 +86,9 @@ int fs_close(fs_t* fs);
 int fs_mkdir(fs_t* fs, const char* path);
 int fs_dir_entries_count(fs_t* fs, const char* path, uint32_t* result);
 int fs_dir_list(fs_t* fs, const char* path, fs_dir_entry_t* results, size_t* count, size_t max_results);
+int fs_entry_info(fs_t* fs, const char* path, fs_dir_entry_t* result);
+int fs_link(fs_t* fs, const char* path, uint32_t node);
+int fs_remove(fs_t* fs, const char* path);
 
 int fs_file_open(fs_t* fs, const char* path, uint8_t flags, fs_file_t* result);
 int fs_file_write(fs_t* fs, fs_file_t* file, const void* buffer, size_t size, size_t* written);

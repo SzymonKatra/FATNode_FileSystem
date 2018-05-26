@@ -30,6 +30,7 @@ int main()
     fs_mkdir(&filesystem, "/cccc");
     fs_mkdir(&filesystem, "/cccc/c/");
     fs_mkdir(&filesystem, "/cccc/d");
+    fs_mkdir(&filesystem, "/cccc/ddvvvvvvvv");
     
     uint32_t cnt;
     fs_dir_entries_count(&filesystem, "/", &cnt);
@@ -79,13 +80,59 @@ int main()
     
     printf("bytes read: %d\n", read);
     
+    const char* tekst = "Wsadzmy do naszego pliku jakis przykladowy tekst....";
+    size_t len = strlen(tekst) + 1;
+    
+    fs_file_open(&filesystem, "/plik1.txt", FS_CREATE, &f);
+    fs_file_write(&filesystem, &f, tekst, len, &written);
+    fs_file_close(&filesystem, &f);
+    
+    fs_dir_entry_t entry;
+    printf("entryerr: %d\n",fs_entry_info(&filesystem, "/plik1.txt", &entry));
+    printf("ENTRY: %d\n", entry.node);
+    
+    char buf[100];
+    fs_file_open(&filesystem, "/plik1.txt", 0, &f);
+    fs_file_read(&filesystem, &f, buf, len, &read);
+    fs_file_close(&filesystem, &f);
+    
+    puts(buf);
+    memset(buf, 0xAA, 100);
+    
+    fs_link(&filesystem, "/aaaa/link.dupa", entry.node);
+    
+    fs_file_open(&filesystem, "/aaaa/link.dupa", 0, &f);
+    fs_file_read(&filesystem, &f, buf, len, &read);
+    fs_file_close(&filesystem, &f);
+    
+    puts(buf);
+    
+    fs_remove(&filesystem, "/aaaa/link.dupa");
+    fs_remove(&filesystem, "/plik1.txt");
+    fs_remove(&filesystem, "/aaaa/x");
+    fs_remove(&filesystem, "/cccc/xddddd");
+    fs_remove(&filesystem, "/cccc/ssss");
+    fs_remove(&filesystem, "/cccc/c");
+    fs_entry_info(&filesystem, "/cccc", &entry);
+    fs_link(&filesystem, "/linkujemy", entry.node);
+    fs_mkdir(&filesystem, "/dddddddddd");
+    fs_remove(&filesystem, "/dddddddddd");
+    //fs_remove(&filesystem ,"/cccc");
+    fs_remove(&filesystem, "/linkujemy");
+    fs_remove(&filesystem, "/d");
+    fs_remove(&filesystem, "/aaaa");
+    fs_remove(&filesystem, "/cccc");
+    fs_remove(&filesystem, "/bbbb");
+    fs_remove(&filesystem, "/dupa");
+    fs_mkdir(&filesystem, "/a/b/c/d/");
+    
     printf("er %d\n", fs_dir_entries_count(&filesystem, "/cccc/ssss", &cnt));
     printf("%d\n", cnt);
     
     fs_dir_entry_t entries[256];
     size_t count;
     
-    fs_dir_list(&filesystem, "/cccc", entries, &count, 256);
+    fs_dir_list(&filesystem, "/", entries, &count, 256);
     for (size_t i = 0; i < count; i++) printf("%s %d %d\n", entries[i].name, entries[i].node, entries[i].type);
     
     
