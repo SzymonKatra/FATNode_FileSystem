@@ -11,6 +11,7 @@
 #define FS_WRONG_PATH           7
 #define FS_PATH_TOO_LONG        8
 #define FS_DIR_NAME_TOO_LONG    9
+#define FS_BUFFER_TOO_SMALL     10
 
 #define FS_SECTOR_SIZE          128
 
@@ -62,8 +63,6 @@ int fs_close(fs_t* fs);
 
 int fs_mkdir(fs_t* fs, const char* path);
 int fs_dir_entries_count(fs_t* fs, const char* path, uint32_t* result);
-
-
-uint32_t fs_file(fs_t* fs);
+int fs_dir_list(fs_t* fs, const char* path, fs_dir_entry_t* results, size_t* count, size_t max_results);
 
 #endif

@@ -23,8 +23,7 @@ int main()
         printf("Error while creating filesystem!\n");
         return -1;
     }
-    int e;
-    e = fs_mkdir(&filesystem, "/dupa");printf("%d\n", e);
+    fs_mkdir(&filesystem, "/dupa");
     fs_mkdir(&filesystem, "/aaaa");
     fs_mkdir(&filesystem, "/bbbb");
     fs_mkdir(&filesystem, "/cccc");
@@ -33,13 +32,18 @@ int main()
     
     uint32_t cnt;
     fs_dir_entries_count(&filesystem, "/", &cnt);
-    printf("%d", cnt);
+    printf("%d\n", cnt);
+    fs_dir_entries_count(&filesystem, "/cccc", &cnt);
+    printf("%d\n", cnt);
+    fs_dir_entries_count(&filesystem, "/cccc/c", &cnt);
+    printf("%d\n", cnt);
     
-    for (int i = 0; i < 128; i++)
-    {
-        
-        //printf("%d\n", fs_file(&filesystem));
-    }
+    fs_dir_entry_t entries[256];
+    size_t count;
+    
+    fs_dir_list(&filesystem, "/", entries, &count, 256);
+    for (size_t i = 0; i < count; i++) printf("%s\n", entries[i].name);
+    
     
     fs_close(&filesystem);
     

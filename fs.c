@@ -67,6 +67,7 @@ static int _fs_create_node(fs_t* fs, uint32_t* result_node_number);
 static int _fs_create_dir(fs_t* fs, uint32_t node, uint32_t parent_node, uint32_t* result_cluster);
 static int _fs_dir_find_entry(fs_t* fs, uint32_t dir_node, const char* entry_name, uint8_t* result_code, uint32_t* result_node);
 static int _fs_dir_add_entry(fs_t* fs, uint32_t dir_node, const char* entry_name, uint32_t entry_node);
+static int _fs_find_node(fs_t* fs, const char* path, uint32_t* result_node);
 
 static uint32_t _fs_cluster_to_sector(fs_t* fs, uint32_t cluster);
 static size_t _fs_cluster_state_pos(fs_t* fs, uint32_t cluster);
@@ -94,7 +95,7 @@ int fs_create(const fs_disk_operations_t* operations, size_t size, fs_t* result_
     
     result_fs->sectors_count = size / FS_SECTOR_SIZE;
     
-    memset(&result_fs->buffer, 0, FS_SECTOR_SIZE);
+    memset(result_fs->buffer, 0, FS_SECTOR_SIZE);
     for (uint32_t i = 0; i < result_fs->sectors_count; i++)
     {
         FS_CHECK_ERROR(_fs_write_sector_buffer(result_fs, i));
@@ -190,10 +191,11 @@ int fs_mkdir(fs_t* fs, const char* path)
 
 int fs_dir_entries_count(fs_t* fs, const char* path, uint32_t* result)
 {
-    uint32_t node_number = fs->root_node; // todo: search path
+    uint32_t node;
+    FS_CHECK_ERROR(_fs_find_node(fs, path, &node));
     
     _fs_node_t node_data;
-    FS_CHECK_ERROR(_fs_read_node(fs, node_number, &node_data));
+    FS_CHECK_ERROR(_fs_read_node(fs, node, &node_data));
     
     if (node_data.type != FS_NODE_TYPE_DIR) return FS_NOT_A_DIRECTORY;
     
@@ -217,13 +219,47 @@ int fs_dir_entries_count(fs_t* fs, const char* path, uint32_t* result)
     return FS_OK;
 }
 
-//int fs_dir_list(fs_t* fs, char* path, )
-
-uint32_t fs_file(fs_t* fs)
+int fs_dir_list(fs_t* fs, const char* path, fs_dir_entry_t* results, size_t* count, size_t max_results)
 {
-    uint32_t x;
-    int e = _fs_create_node(fs, &x);
-    return x;
+    uint32_t node;
+    FS_CHECK_ERROR(_fs_find_node(fs, path, &node));
+    
+    _fs_node_t node_data;
+    FS_CHECK_ERROR(_fs_read_node(fs, node, &node_data));
+    
+    if (node_data.type != FS_NODE_TYPE_DIR) return FS_NOT_A_DIRECTORY;
+    
+    _fs_dir_cluster_t* dir = (_fs_dir_cluster_t*)fs->buffer;
+    
+    *count = 0;
+    uint32_t current_cluster = node_data.cluster_index;
+    do
+    {
+        FS_CHECK_ERROR(_fs_read_cluster_buffer(fs, current_cluster));
+    
+        for (size_t i = 0; i < FS_REFERENCES_IN_CLUSTER; i++)
+        {
+            if (dir->ref[i].name[0] != 0)
+            {
+                if (*count >= max_results) return FS_BUFFER_TOO_SMALL;
+                
+                strcpy(results[*count].name, dir->ref[i].name);
+                results[*count].node = dir->ref[i].node;
+                
+                _fs_node_t entry_node_data;
+                FS_CHECK_ERROR(_fs_read_node(fs, dir->ref[i].node, &entry_node_data));
+                
+                results[*count].type = entry_node_data.type == FS_NODE_TYPE_FILE ? FS_FILE : FS_DIR;
+                
+                (*count)++;
+            }
+        }
+        
+        FS_CHECK_ERROR(_fs_read_state(fs, current_cluster, &current_cluster));
+    }
+    while (current_cluster != FS_CLUSTER_EOF);
+    
+    return FS_OK;
 }
 
 static int _fs_find_free_cluster(fs_t* fs, uint32_t* result)
@@ -439,11 +475,49 @@ static int _fs_dir_add_entry(fs_t* fs, uint32_t dir_node, const char* entry_name
     FS_CHECK_ERROR(_fs_write_state(fs, prev_cluster, new_cluster)); // link to next cluster
     FS_CHECK_ERROR(_fs_write_state(fs, new_cluster, FS_CLUSTER_EOF));
     
-    memset(&fs->buffer, 0, FS_SECTOR_SIZE);
+    memset(fs->buffer, 0, FS_SECTOR_SIZE);
     strcpy(dir->ref[0].name, entry_name);
     dir->ref[0].node = entry_node;
     
     FS_CHECK_ERROR(_fs_write_cluster_buffer(fs, new_cluster));
+    
+    return FS_OK;
+}
+
+static int _fs_find_node(fs_t* fs, const char* path, uint32_t* result_node)
+{
+    if (path[0] != '/') return FS_WRONG_PATH;
+    
+    *result_node = fs->root_node;
+    
+    if (strlen(path) > 255) return FS_PATH_TOO_LONG;
+    
+    char pathBuffer[256];
+    strcpy(pathBuffer, path);
+    char* name = strtok(pathBuffer, "/");
+    while (name != NULL)
+    {
+        if (strlen(name) > FS_DIR_NAME_MAX_LENGTH) return FS_DIR_NAME_TOO_LONG;
+        
+        uint8_t find_status;
+        uint32_t find_node;
+        FS_CHECK_ERROR(_fs_dir_find_entry(fs, *result_node, name, &find_status, &find_node));
+        
+        name = strtok(NULL, "/");
+        
+        if (name != NULL)
+        {
+            // element in the middle of path should be directory
+            if (find_status != FS_DIRFIND_DIR) return FS_NOT_A_DIRECTORY;
+        }
+        else
+        {
+            // last path element should be existing directory or file
+            if (find_status == FS_DIRFIND_NOT_EXISTS) return FS_WRONG_PATH;
+        }
+        
+        *result_node = find_node;
+    }
     
     return FS_OK;
 }
@@ -489,7 +563,7 @@ static int _fs_write_sector_buffer(fs_t* fs, size_t sector_index) // uses fs->bu
 }
 static int _fs_write_disk_buffer(fs_t* fs, size_t position, size_t size) // uses fs->buffer
 {
-    return _fs_write_disk(fs, &fs->buffer, position, size);
+    return _fs_write_disk(fs, fs->buffer, position, size);
 }
 static int _fs_write_disk(fs_t* fs, const void* buffer, size_t position, size_t size)
 {
@@ -520,7 +594,7 @@ static int _fs_read_sector_buffer(fs_t* fs, size_t sector_index) // uses fs->buf
 }
 static int _fs_read_disk_buffer(fs_t* fs, size_t position, size_t size) // uses fs->buffer
 {
-    return _fs_read_disk(fs, &fs->buffer, position, size);
+    return _fs_read_disk(fs, fs->buffer, position, size);
 }
 static int _fs_read_disk(fs_t* fs, void* buffer, size_t position, size_t size)
 {
