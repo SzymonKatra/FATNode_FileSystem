@@ -1,6 +1,5 @@
-#define FILE_NAME "disk.fs"
-
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "fs.h"
 
@@ -10,7 +9,63 @@ int real_read(void* state, void* buffer, size_t position, size_t size);
 int real_write(void* state, const void* buffer, size_t position, size_t size);
 int real_close(void* state);
 
-int main()
+const char* filename;
+
+void init(int argc, char** argv);
+void cleanup();
+
+int main(int argc, char** argv)
+{
+    init(argc, argv);
+    
+    cleanup();
+    
+    return 0;
+}
+
+void init(int argc, char** argv)
+{
+    if (argc < 2) return -1;
+    
+    filename = argv[1];
+    
+    fs_disk_operations_t operations;
+    operations.read = &real_read;
+    operations.write = &real_write;
+    operations.close = &real_close;
+    
+    fs_t fs;
+    
+    if (argc >= 3)
+    {
+        operations.init = &real_init_create;
+        if (fs_create(&operations, atoi(argv[2]), &fs) != FS_OK)
+        {
+            puts("Error occurred while creating filesystem");
+            exit(-1);
+        }
+    }
+    else
+    {
+        operations.init = &real_init_open;
+        if (fs_open(&operations, &fs) != FS_OK)
+        {
+            puts("Error occured while opening filesystem");
+            exit(-1);
+        }
+    }
+}
+
+void cleanup()
+{
+    if (fs_close(&fs) != FS_OK)
+    {
+        puts("Error occured while closing filesystem");
+        exit(-1);
+    }
+}
+
+int test()
 {
     fs_disk_operations_t operations;
     //operations.init = &real_init_create;
@@ -149,7 +204,7 @@ int main()
 
 int real_init_create(void** result_state)
 {
-    FILE* file = fopen(FILE_NAME, "w+");
+    FILE* file = fopen(filename, "w+");
     
     if (file == NULL) return FS_DISK_INIT_ERROR;
     
@@ -159,7 +214,7 @@ int real_init_create(void** result_state)
 }
 int real_init_open(void** result_state)
 {
-    FILE* file = fopen(FILE_NAME, "r+");
+    FILE* file = fopen(filename, "r+");
     
     if (file == NULL) return FS_DISK_INIT_ERROR;
     
