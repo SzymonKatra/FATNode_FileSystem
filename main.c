@@ -42,10 +42,13 @@ int main()
     fs_file_t f;
     fs_file_open(&filesystem, "/cccc/ssss", FS_CREATE, &f);
     
+    size_t written, read;
     char buffer[555];
     memset(buffer, 0xEB, 555);
-    fs_file_write(&filesystem, &f, buffer, 555);
+    fs_file_write(&filesystem, &f, buffer, 555, &written);
     fs_file_close(&filesystem, &f);
+    
+    printf("bytes written: %d\n", written);
     
     fs_file_open(&filesystem, "/cccc/ssss", FS_CREATE, &f);
     fs_file_close(&filesystem, &f);
@@ -53,8 +56,28 @@ int main()
     memset(buffer, 0xAB, 134);
     
     fs_file_open(&filesystem, "/aaaa/x", FS_CREATE, &f);
-    fs_file_write(&filesystem, &f, buffer, 35);
+    fs_file_write(&filesystem, &f, buffer, 35, &written);
     fs_file_close(&filesystem, &f);
+    
+    memset(buffer, 0xFF, 100);
+    
+    fs_file_open(&filesystem, "/cccc/xddddd", FS_CREATE, &f);
+    fs_file_write(&filesystem, &f, buffer, 3, &written);
+    fs_file_close(&filesystem, &f);
+    
+    memset(buffer, 0xCD, 134);
+    
+    fs_file_open(&filesystem, "/aaaa/x", FS_APPEND, &f);
+    fs_file_write(&filesystem, &f, buffer, 134, &written);
+    fs_file_close(&filesystem, &f);
+    
+    printf("bytes written: %d\n", written);
+    
+    fs_file_open(&filesystem, "/aaaa/x", 0, &f);
+    fs_file_read(&filesystem, &f, buffer, 40, &read);
+    fs_file_close(&filesystem, &f);
+    
+    printf("bytes read: %d\n", read);
     
     printf("er %d\n", fs_dir_entries_count(&filesystem, "/cccc/ssss", &cnt));
     printf("%d\n", cnt);

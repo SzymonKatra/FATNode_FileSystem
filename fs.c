@@ -373,7 +373,7 @@ int fs_file_open(fs_t* fs, const char* path, uint8_t flags, fs_file_t* result)
         
         if (flags & FS_APPEND)
         {
-            FS_CHECK_ERROR(fs_file_seek(fs, result, node_data.size));
+            FS_CHECK_ERROR(fs_file_seek(fs, result, FS_SEEK_END, 0));
         }
     }
     
@@ -382,8 +382,12 @@ int fs_file_open(fs_t* fs, const char* path, uint8_t flags, fs_file_t* result)
     return FS_OK;
 }
 
-int fs_file_write(fs_t* fs, fs_file_t* file, const void* buffer, size_t size)
+int fs_file_write(fs_t* fs, fs_file_t* file, const void* buffer, size_t size, size_t* written)
 {
+    *written = 0;
+    
+    const uint8_t* byte_buffer = (const uint8_t*)buffer;
+    
     while (size)
     {
         uint32_t remaining_in_cluster = FS_SECTOR_SIZE - file->current_cluster_pos;
@@ -394,11 +398,13 @@ int fs_file_write(fs_t* fs, fs_file_t* file, const void* buffer, size_t size)
             size_t disk_pos = FS_SECTOR_POS(_fs_cluster_to_sector(fs, file->current_cluster));
             disk_pos += file->current_cluster_pos;
     
-            FS_CHECK_ERROR(_fs_write_disk(fs, buffer, disk_pos, remaining_in_cluster));
+            FS_CHECK_ERROR(_fs_write_disk(fs, byte_buffer, disk_pos, remaining_in_cluster));
     
             size -= remaining_in_cluster;
             file->current_cluster_pos += remaining_in_cluster;
             file->pos += remaining_in_cluster;
+            byte_buffer += remaining_in_cluster;
+            *written += remaining_in_cluster;
         }
 
         if (size)
@@ -428,10 +434,66 @@ int fs_file_write(fs_t* fs, fs_file_t* file, const void* buffer, size_t size)
             }
         }
     }
+    
+    if (file->pos > file->size) file->size = file->pos;
 }
 
-int fs_file_seek(fs_t* fs, fs_file_t* file, size_t pos)
+int fs_file_read(fs_t* fs, fs_file_t* file, void* buffer, size_t size, size_t* read)
 {
+    if (file->pos >= file->size) return FS_EOF;
+    
+    if (file->pos + size > file->size) size = file->size - file->pos;
+    
+    *read = 0;
+    
+    uint8_t* byte_buffer = (uint8_t*)buffer;
+    
+    while (size)
+    {
+        uint32_t remaining_in_cluster = FS_SECTOR_SIZE - file->current_cluster_pos;
+        if (size < remaining_in_cluster) remaining_in_cluster = size;
+        
+        if (remaining_in_cluster > 0)
+        {
+            size_t disk_pos = FS_SECTOR_POS(_fs_cluster_to_sector(fs, file->current_cluster));
+            disk_pos += file->current_cluster_pos;
+            
+            FS_CHECK_ERROR(_fs_read_disk(fs, byte_buffer, disk_pos, remaining_in_cluster));
+            
+            size -= remaining_in_cluster;
+            file->current_cluster_pos += remaining_in_cluster;
+            file->pos += remaining_in_cluster;
+            byte_buffer += remaining_in_cluster;
+            *read += remaining_in_cluster;
+        }
+        
+        if (file->pos > file->size) return FS_EOF;
+        
+        if (size)
+        {
+            // obtain new cluster if there are remaining bytes to read
+            
+            uint32_t cluster_state;
+            FS_CHECK_ERROR(_fs_read_state(fs, file->current_cluster, &cluster_state));
+            
+            if (cluster_state == FS_CLUSTER_EOF) return FS_EOF;
+            
+            // switch to next cluster
+            file->current_cluster = cluster_state;
+            file->current_cluster_pos = 0;
+        }
+    }
+}
+
+int fs_file_seek(fs_t* fs, fs_file_t* file, uint8_t mode, int32_t pos)
+{
+    switch (mode)
+    {
+        case FS_SEEK_CURRENT: pos = file->pos + pos; break;
+        case FS_SEEK_END: pos = file->size - pos; break;
+    }
+    
+    if (pos < 0) return FS_EOF;
     if (pos > file->size) return FS_EOF;
     
     uint32_t clusters_to_skip = pos / FS_SECTOR_SIZE;
@@ -469,6 +531,11 @@ int fs_file_close(fs_t* fs, fs_file_t* file)
     file->is_opened = 0;
     
     return FS_OK;
+}
+
+int fs_link(fs_t* fs, const char* path, uint32_t node)
+{
+    
 }
 
 static int _fs_find_free_cluster(fs_t* fs, uint32_t* result)
