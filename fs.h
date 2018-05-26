@@ -10,15 +10,22 @@
 #define FS_NOT_A_DIRECTORY      6
 #define FS_WRONG_PATH           7
 #define FS_PATH_TOO_LONG        8
-#define FS_DIR_NAME_TOO_LONG    9
+#define FS_NAME_TOO_LONG        9
 #define FS_BUFFER_TOO_SMALL     10
+#define FS_NOT_A_FILE           11
+#define FS_FILE_NOT_EXISTS      12
+#define FS_FILE_ALREADY_CLOSED  13
+#define FS_EOF                  14
 
 #define FS_SECTOR_SIZE          128
 
-#define FS_DIR_NAME_MAX_LENGTH  27
+#define FS_NAME_MAX_LENGTH      27
 
-#define FS_FILE     1
-#define FS_DIR      2
+#define FS_FILE         1
+#define FS_DIR          2
+
+#define FS_CREATE       (1 << 0)
+#define FS_APPEND       (1 << 1)
 
 #include <stdint.h>
 #include <stddef.h>
@@ -56,6 +63,17 @@ typedef struct
     uint8_t     type;
 } fs_dir_entry_t;
 
+typedef struct
+{
+    uint32_t    node;
+    uint32_t    pos;
+    uint32_t    size;
+    uint32_t    first_cluster;
+    uint32_t    current_cluster;
+    uint32_t    current_cluster_pos;
+    uint8_t     is_opened;
+} fs_file_t;
+
 int fs_create(const fs_disk_operations_t* operations, size_t size, fs_t* result_fs);
 int fs_open(const fs_disk_operations_t* operations, fs_t* result_fs);
 
@@ -64,5 +82,10 @@ int fs_close(fs_t* fs);
 int fs_mkdir(fs_t* fs, const char* path);
 int fs_dir_entries_count(fs_t* fs, const char* path, uint32_t* result);
 int fs_dir_list(fs_t* fs, const char* path, fs_dir_entry_t* results, size_t* count, size_t max_results);
+
+int fs_file_open(fs_t* fs, const char* path, uint8_t flags, fs_file_t* result);
+int fs_file_write(fs_t* fs, fs_file_t* file, const void* buffer, size_t size);
+int fs_file_seek(fs_t* fs, fs_file_t* file, size_t pos);
+int fs_file_close(fs_t* fs, fs_file_t* file);
 
 #endif

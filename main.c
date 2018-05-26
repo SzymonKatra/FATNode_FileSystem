@@ -1,6 +1,7 @@
 #define FILE_NAME "disk.fs"
 
 #include <stdio.h>
+#include <string.h>
 #include "fs.h"
 
 int real_init(void ** result_state);
@@ -27,7 +28,7 @@ int main()
     fs_mkdir(&filesystem, "/aaaa");
     fs_mkdir(&filesystem, "/bbbb");
     fs_mkdir(&filesystem, "/cccc");
-    fs_mkdir(&filesystem, "/cccc/c");
+    fs_mkdir(&filesystem, "/cccc/c/");
     fs_mkdir(&filesystem, "/cccc/d");
     
     uint32_t cnt;
@@ -38,11 +39,32 @@ int main()
     fs_dir_entries_count(&filesystem, "/cccc/c", &cnt);
     printf("%d\n", cnt);
     
+    fs_file_t f;
+    fs_file_open(&filesystem, "/cccc/ssss", FS_CREATE, &f);
+    
+    char buffer[555];
+    memset(buffer, 0xEB, 555);
+    fs_file_write(&filesystem, &f, buffer, 555);
+    fs_file_close(&filesystem, &f);
+    
+    fs_file_open(&filesystem, "/cccc/ssss", FS_CREATE, &f);
+    fs_file_close(&filesystem, &f);
+    
+    memset(buffer, 0xAB, 134);
+    
+    fs_file_open(&filesystem, "/aaaa/x", FS_CREATE, &f);
+    fs_file_write(&filesystem, &f, buffer, 35);
+    fs_file_close(&filesystem, &f);
+    
+    printf("er %d\n", fs_dir_entries_count(&filesystem, "/cccc/ssss", &cnt));
+    printf("%d\n", cnt);
+    
     fs_dir_entry_t entries[256];
     size_t count;
     
-    fs_dir_list(&filesystem, "/", entries, &count, 256);
-    for (size_t i = 0; i < count; i++) printf("%s\n", entries[i].name);
+    fs_dir_list(&filesystem, "/cccc", entries, &count, 256);
+    for (size_t i = 0; i < count; i++) printf("%s %d %d\n", entries[i].name, entries[i].node, entries[i].type);
+    
     
     
     fs_close(&filesystem);
