@@ -3,7 +3,7 @@
 #include <string.h>
 #include <time.h>
 
-#define FS_CHECK_ERROR(x)      { int error = x; if (error != FS_OK) return error; }
+#define FS_CHECK_ERROR(x)       do { int error = x; if (error != FS_OK) return error; } while(0)
 
 #define FS_SECTOR_POS(x)        ((x) * FS_SECTOR_SIZE)
 

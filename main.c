@@ -2,6 +2,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include "fs.h"
+#include "parser.h"
+
+#define MAX_COMMAND_LEN     255
+#define MAX_COMMAND_ARGS    10
+#define MAX_DIR_ENTRIES     255
 
 int real_init_create(void ** result_state);
 int real_init_open(void ** result_state);
@@ -10,13 +15,123 @@ int real_write(void* state, const void* buffer, size_t position, size_t size);
 int real_close(void* state);
 
 const char* filename;
+fs_disk_operations_t operations;
+fs_t fs;
+char cmd[MAX_COMMAND_LEN];
+char* args[MAX_COMMAND_ARGS];
+fs_dir_entry_t entries[MAX_DIR_ENTRIES];
+char current_dir[255];
 
 void init(int argc, char** argv);
 void cleanup();
+void cmd_mkdir(const char* path);
+void cmd_ls(const char* path);
+void cmd_cd(const char* path);
+void cmd_pwd();
+
+void print_fs_error(int fs_error_code);
 
 int main(int argc, char** argv)
-{
+{    
     init(argc, argv);
+    
+    puts("Type help to get more information");
+
+    while (1)
+    {
+        printf("$ ");
+        fgets(cmd, MAX_COMMAND_LEN, stdin);
+        size_t args_count = parser_parse(cmd, args, MAX_COMMAND_ARGS);
+        
+        if (args_count == 0) continue;
+        
+        if (args[0][0] == 0)
+        {
+            continue;
+        }
+        else if (strcmp(args[0], "cp") == 0)
+        {
+            
+        }
+        else if (strcmp(args[0], "mv") == 0)
+        {
+            
+        }
+        else if (strcmp(args[0], "mkdir") == 0)
+        {
+            if (args_count < 2)
+            {
+                puts("mkdir requires 1 argument");
+                continue;
+            }
+            
+            cmd_mkdir(args[1]);
+        }
+        else if (strcmp(args[0], "ln") == 0)
+        {
+            
+        }
+        else if (strcmp(args[0], "rm") == 0)
+        {
+            
+        }
+        else if (strcmp(args[0], "import") == 0)
+        {
+            
+        }
+        else if (strcmp(args[0], "export") == 0)
+        {
+            
+        }
+        else if (strcmp(args[0], "exp") == 0)
+        {
+        }
+        else if (strcmp(args[0], "trunc") == 0)
+        {
+            
+        }
+        else if (strcmp(args[0], "cd") == 0)
+        {
+            if (args_count < 2)
+            {
+                puts("cd requires 1 argument");
+                continue;
+            }
+            
+            cmd_cd(args[1]);
+        }
+        else if (strcmp(args[0], "ls") == 0)
+        {
+            if (args_count < 2)
+            {
+                cmd_ls(current_dir);
+            }
+            else
+            {
+                cmd_ls(args[1]);
+            }
+        }
+        else if (strcmp(args[0], "pwd") == 0)
+        {
+            cmd_pwd();
+        }
+        else if (strcmp(args[0], "fsinfo") == 0)
+        {
+            
+        }
+        else if (strcmp(args[0], "help") == 0)
+        {
+            
+        }
+        else if (strcmp(args[0], "exit") == 0)
+        {
+            break;
+        }
+        else
+        {
+            puts("Unknown command. Type help to get more information");
+        }
+    }
     
     cleanup();
     
@@ -25,16 +140,13 @@ int main(int argc, char** argv)
 
 void init(int argc, char** argv)
 {
-    if (argc < 2) return -1;
+    if (argc < 2) exit(-1);
     
     filename = argv[1];
     
-    fs_disk_operations_t operations;
     operations.read = &real_read;
     operations.write = &real_write;
     operations.close = &real_close;
-    
-    fs_t fs;
     
     if (argc >= 3)
     {
@@ -44,6 +156,8 @@ void init(int argc, char** argv)
             puts("Error occurred while creating filesystem");
             exit(-1);
         }
+        
+        puts("Filesystem successfully created");
     }
     else
     {
@@ -53,7 +167,11 @@ void init(int argc, char** argv)
             puts("Error occured while opening filesystem");
             exit(-1);
         }
+        
+        puts("Filesystem successfully opened");
     }
+    
+    strcpy(current_dir, "/");
 }
 
 void cleanup()
@@ -62,6 +180,114 @@ void cleanup()
     {
         puts("Error occured while closing filesystem");
         exit(-1);
+    }
+    
+    puts("Filesystem successfully closed");
+}
+
+void cmd_mkdir(const char* path)
+{
+    int result = fs_mkdir(&fs, path);
+    
+    if (result != FS_OK) print_fs_error(result);
+}
+
+void cmd_ls(const char* path)
+{
+    size_t count;
+    int result = fs_dir_list(&fs, path, entries, &count, MAX_DIR_ENTRIES);
+    if (result != FS_OK)
+    {
+        print_fs_error(result);
+        return;
+    }
+    
+    for (size_t i = 0; i < count; i++)
+    {
+        puts(entries[i].name);
+    }
+}
+
+void cmd_cd(const char* path)
+{
+    char tmp_path[255];
+    strcpy(tmp_path, path);
+    char* tmp_tokens[10];
+    size_t tokens_count = 0;
+    char* token = strtok(tmp_path, "/");
+    while (token != NULL)
+    {
+        tmp_tokens[tokens_count++] = token;
+        token = strtok(NULL, "/");
+    }
+    
+    char tmp_current[255];
+    strcpy(tmp_current, current_dir);
+    
+    for (int i = 0; i < tokens_count; i++)
+    {
+        token = tmp_tokens[i];
+        
+        if (strcmp(token, "..") == 0)
+        {
+            size_t curr_len = strlen(tmp_current);
+            if (curr_len > 1)
+            {
+                *(tmp_current + curr_len - 1) = 0;
+            
+                char* last_slash = strrchr(tmp_current, '/');
+            
+                if (last_slash != NULL)
+                {
+                    *(last_slash + 1) = 0;
+                }
+            }
+        }
+        else if (strcmp(token, ".") != 0)
+        {
+            size_t curr_len = strlen(tmp_current);
+            strcpy(tmp_current + curr_len, token);
+            curr_len = strlen(tmp_current);
+            *(tmp_current + curr_len) = '/';
+            *(tmp_current + curr_len + 1) = 0;
+            
+            int result = fs_entry_info(&fs, tmp_current, &entries[0]);
+            
+            if (result != FS_OK)
+            {
+                print_fs_error(result);
+                return;
+            }
+        }
+    }
+    
+    strcpy(current_dir, tmp_current);
+}
+
+void cmd_pwd()
+{
+    puts(current_dir);
+}
+
+void print_fs_error(int fs_error_code)
+{
+    switch (fs_error_code)
+    {
+        case FS_OK: puts("Ok"); break;
+        case FS_DISK_INIT_ERROR: puts("An error occurred while initializing disk"); break;
+        case FS_DISK_READ_ERROR: puts("An error occured while reading from the disk"); break;
+        case FS_DISK_WRITE_ERROR: puts("An error occurred while writing to the disk"); break;
+        case FS_DISK_CLOSE_ERROR: puts("An errror occured while closing the disk"); break;
+        case FS_FULL: puts("File system is full"); break;
+        case FS_NOT_A_DIRECTORY: puts("Not a directory"); break;
+        case FS_WRONG_PATH: puts("Wrong path specified"); break;
+        case FS_PATH_TOO_LONG: puts("Path is too long"); break;
+        case FS_NAME_TOO_LONG: puts("Name is too long"); break;
+        case FS_BUFFER_TOO_SMALL: puts("Buffer is too small to handle result"); break;
+        case FS_NOT_A_FILE: puts("Not a file"); break;
+        case FS_NOT_EXISTS: puts("Not exists"); break;
+        case FS_FILE_ALREADY_CLOSED: puts("File is closed"); break;
+        case FS_EOF: puts("End of file"); break;
     }
 }
 
