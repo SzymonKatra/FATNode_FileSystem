@@ -8,6 +8,13 @@
 #define MAX_COMMAND_ARGS    10
 #define MAX_DIR_ENTRIES     255
 
+#define COLOR_GREEN     	"\x1b[92m"
+#define COLOR_RESET			"\x1b[0m"
+
+#define HANDLE_FS_ERROR(x)  do { int result = x; if (result != FS_OK) { print_fs_error(result); return; } } while(0);
+
+#define TMP_FILENAME        "tmp"
+
 int real_init_create(void ** result_state);
 int real_init_open(void ** result_state);
 int real_read(void* state, void* buffer, size_t position, size_t size);
@@ -20,30 +27,46 @@ fs_t fs;
 char cmd[MAX_COMMAND_LEN];
 char* args[MAX_COMMAND_ARGS];
 fs_dir_entry_t entries[MAX_DIR_ENTRIES];
-char current_dir[255];
+char current_dir[FS_PATH_MAX_LENGTH];
 
 void init(int argc, char** argv);
 void cleanup();
+void cmd_cp(const char* source, const char* destination);
+void cmd_mv(const char* source, const char* destination);
 void cmd_mkdir(const char* path);
-void cmd_ls(const char* path);
+void cmd_touch(const char* path);
+void cmd_ln(const char* destination, const char* link_name);
+void cmd_rm(const char* path);
+void cmd_import(const char* real_source, const char* destination);
+void cmd_export(const char* source, const char* real_destination);
+void cmd_edit(const char* path);
+void cmd_ls(const char* path, int show_node, int show_size);
 void cmd_cd(const char* path);
 void cmd_pwd();
+void cmd_exp(const char* path, size_t count);
+void cmd_trunc(const char* path, size_t count);
 
 void print_fs_error(int fs_error_code);
+void absolute_path(const char* path, char* result);
 
 int main(int argc, char** argv)
 {    
+    printf(COLOR_GREEN);
+
     init(argc, argv);
     
     puts("Type help to get more information");
 
     while (1)
     {
+        printf(COLOR_RESET);
         printf("$ ");
         fgets(cmd, MAX_COMMAND_LEN, stdin);
         size_t args_count = parser_parse(cmd, args, MAX_COMMAND_ARGS);
         
         if (args_count == 0) continue;
+        
+        printf(COLOR_GREEN);
         
         if (args[0][0] == 0)
         {
@@ -51,11 +74,23 @@ int main(int argc, char** argv)
         }
         else if (strcmp(args[0], "cp") == 0)
         {
+            if (args_count < 3)
+            {
+                puts("cp requires 2 arguments");
+                continue;
+            }
             
+            cmd_cp(args[1], args[2]);
         }
         else if (strcmp(args[0], "mv") == 0)
         {
+            if (args_count < 3)
+            {
+                puts("mv requires 2 arguments");
+                continue;
+            }
             
+            cmd_mv(args[1], args[2]);
         }
         else if (strcmp(args[0], "mkdir") == 0)
         {
@@ -67,28 +102,85 @@ int main(int argc, char** argv)
             
             cmd_mkdir(args[1]);
         }
+        else if (strcmp(args[0], "touch") == 0)
+        {
+            if (args_count < 2)
+            {
+                puts("touch required 1 argument");
+                continue;
+            }
+            
+            cmd_touch(args[1]);
+        }
         else if (strcmp(args[0], "ln") == 0)
         {
+            if (args_count < 3)
+            {
+                puts("ln required 2 arguments");
+                continue;
+            }
             
+            cmd_ln(args[1], args[2]);
         }
         else if (strcmp(args[0], "rm") == 0)
         {
+            if (args_count < 2)
+            {
+                puts("rm required 1 argument");
+                continue;
+            }
             
+            cmd_rm(args[1]);
         }
         else if (strcmp(args[0], "import") == 0)
         {
+            if (args_count < 3)
+            {
+                puts("import requires 2 arguments");
+                continue;
+            }
             
+            cmd_import(args[1], args[2]);
         }
         else if (strcmp(args[0], "export") == 0)
         {
+            if (args_count < 3)
+            {
+                puts("export requires 2 arguments");
+                continue;
+            }
             
+            cmd_export(args[1], args[2]);
+        }
+        else if (strcmp(args[0], "edit") == 0)
+        {
+            if (args_count < 2)
+            {
+                puts("edit requires 1 argument");
+                continue;
+            }
+            
+            cmd_edit(args[1]);
         }
         else if (strcmp(args[0], "exp") == 0)
         {
+            if (args_count < 3)
+            {
+                puts("exp requires 2 arguments");
+                continue;
+            }
+            
+            cmd_exp(args[1], atoi(args[2]));
         }
         else if (strcmp(args[0], "trunc") == 0)
         {
+            if (args_count < 3)
+            {
+                puts("trunc requires 2 arguments");
+                continue;
+            }
             
+            cmd_trunc(args[1], atoi(args[2]));
         }
         else if (strcmp(args[0], "cd") == 0)
         {
@@ -102,14 +194,32 @@ int main(int argc, char** argv)
         }
         else if (strcmp(args[0], "ls") == 0)
         {
-            if (args_count < 2)
+            char* path_arg = NULL;
+            int node = 0;
+            int size = 0;
+            for (size_t i = 1; i < args_count; i++)
             {
-                cmd_ls(current_dir);
+                if (args[i][0] == '-')
+                {
+                    if (strchr(args[i], 'd') != NULL) node = 1;
+                    if (strchr(args[i], 's') != NULL) size = 1;
+                }
+                else
+                {
+                    if (path_arg != NULL)
+                    {
+                        puts("Too many arguments specified");
+                    }
+                    else
+                    {
+                        path_arg = args[i];
+                    }
+                }
             }
-            else
-            {
-                cmd_ls(args[1]);
-            }
+            
+            if (path_arg == NULL) path_arg = current_dir;
+            
+            cmd_ls(path_arg, node, size);
         }
         else if (strcmp(args[0], "pwd") == 0)
         {
@@ -132,6 +242,8 @@ int main(int argc, char** argv)
             puts("Unknown command. Type help to get more information");
         }
     }
+    
+    printf(COLOR_GREEN);
     
     cleanup();
     
@@ -185,26 +297,187 @@ void cleanup()
     puts("Filesystem successfully closed");
 }
 
-void cmd_mkdir(const char* path)
+void cmd_cp(const char* source, const char* destination)
 {
-    int result = fs_mkdir(&fs, path);
+    char src_path[FS_PATH_MAX_LENGTH];
+    char dst_path[FS_PATH_MAX_LENGTH];
+    absolute_path(source, src_path);
+    absolute_path(destination, dst_path);
     
-    if (result != FS_OK) print_fs_error(result);
+    fs_file_t file;
+    HANDLE_FS_ERROR(fs_file_open(&fs, src_path, 0, &file));
+    
+    fs_file_t dst_file;
+    HANDLE_FS_ERROR(fs_file_open(&fs, dst_path, FS_CREATE, &dst_file));
+
+    size_t read;
+    size_t written;
+    char buffer[256];
+    int err = fs_file_read(&fs, &file, buffer, 256, &read);
+    while (err != FS_EOF)
+    {
+        fs_file_write(&fs, &dst_file, buffer, read, &written);
+        
+        err = fs_file_read(&fs, &file, buffer, 256, &read);
+    }
+    
+    HANDLE_FS_ERROR(fs_file_close(&fs, &file));
+    HANDLE_FS_ERROR(fs_file_close(&fs, &dst_file));
 }
 
-void cmd_ls(const char* path)
+void cmd_mv(const char* source, const char* destination)
 {
-    size_t count;
-    int result = fs_dir_list(&fs, path, entries, &count, MAX_DIR_ENTRIES);
-    if (result != FS_OK)
+    char src_path[FS_PATH_MAX_LENGTH];
+    char dst_path[FS_PATH_MAX_LENGTH];
+    absolute_path(source, src_path);
+    absolute_path(destination, dst_path);
+    
+    HANDLE_FS_ERROR(fs_entry_info(&fs, src_path, &entries[0]));
+    HANDLE_FS_ERROR(fs_link(&fs, dst_path, entries[0].node));
+    HANDLE_FS_ERROR(fs_remove(&fs, src_path));
+}
+
+void cmd_mkdir(const char* path)
+{
+    char final_path[FS_PATH_MAX_LENGTH];
+    absolute_path(path, final_path);
+    
+    HANDLE_FS_ERROR(fs_mkdir(&fs, final_path));
+}
+
+void cmd_touch(const char* path)
+{
+    char final_path[FS_PATH_MAX_LENGTH];
+    absolute_path(path, final_path);
+    
+    fs_file_t file;
+    HANDLE_FS_ERROR(fs_file_open(&fs, final_path, FS_CREATE, &file));
+    HANDLE_FS_ERROR(fs_file_close(&fs, &file));
+}
+
+void cmd_ln(const char* destination, const char* link_name)
+{
+    char dst_path[FS_PATH_MAX_LENGTH];
+    char link[FS_PATH_MAX_LENGTH];
+    absolute_path(destination, dst_path);
+    absolute_path(link_name, link);
+    
+    HANDLE_FS_ERROR(fs_entry_info(&fs, dst_path, &entries[0]));
+    HANDLE_FS_ERROR(fs_link(&fs, link, entries[0].node));
+}
+
+void cmd_rm(const char* path)
+{
+    char final_path[FS_PATH_MAX_LENGTH];
+    absolute_path(path, final_path);
+    
+    HANDLE_FS_ERROR(fs_remove(&fs, final_path));
+}
+
+void cmd_import(const char* real_source, const char* destination)
+{
+    char dst_path[FS_PATH_MAX_LENGTH];
+    absolute_path(destination, dst_path);
+    
+    FILE* real_file = fopen(real_source, "r");
+    if (real_file == NULL)
     {
-        print_fs_error(result);
+        printf("Cannot open external file %s\n", real_source);
         return;
     }
     
+    fs_file_t file;
+    HANDLE_FS_ERROR(fs_file_open(&fs, dst_path, FS_CREATE, &file));
+    
+    char buffer[256];
+    size_t read;
+    size_t written;
+    while (read = fread(buffer, 1, 256, real_file))
+    {
+        HANDLE_FS_ERROR(fs_file_write(&fs, &file, buffer, read, &written));
+    }
+    
+    fclose(real_file);
+    
+    HANDLE_FS_ERROR(fs_file_close(&fs, &file));
+}
+
+void cmd_export(const char* source, const char* real_destination)
+{
+    char src_path[FS_PATH_MAX_LENGTH];
+    absolute_path(source, src_path);
+    
+    fs_file_t file;
+    HANDLE_FS_ERROR(fs_file_open(&fs, src_path, 0, &file));
+    
+    FILE* real_file = fopen(real_destination, "w+");
+    if (real_file == NULL)
+    {
+        printf("Cannot open external file %s\n", real_destination);
+        return;
+    }
+    
+    char buffer[256];
+    size_t read;
+    int err = fs_file_read(&fs, &file, buffer, 256, &read);
+    while (err != FS_EOF)
+    {
+        fwrite(buffer, 1, read, real_file);
+        err = fs_file_read(&fs, &file, buffer, 256, &read);
+        if (err != FS_EOF && err != FS_OK)
+        {
+            print_fs_error(err);
+            return;
+        }
+    }
+    
+    fclose(real_file);
+    
+    HANDLE_FS_ERROR(fs_file_close(&fs, &file));
+}
+
+void cmd_edit(const char* path)
+{
+    char full_path[FS_PATH_MAX_LENGTH];
+    absolute_path(path, full_path);
+    
+    fs_dir_entry_t result;
+    int err = fs_entry_info(&fs, full_path, &result);
+    
+    if (err == FS_OK)
+    {
+        cmd_export(path, TMP_FILENAME);
+    }
+    else if (err != FS_NOT_EXISTS)
+    {
+        print_fs_error(err);
+        return;
+    }
+    
+    system("vim " TMP_FILENAME);
+    
+    cmd_import(TMP_FILENAME, path);
+
+    remove(TMP_FILENAME);
+}
+
+void cmd_ls(const char* path, int show_node, int show_size)
+{
+    size_t count;
+    HANDLE_FS_ERROR(fs_dir_list(&fs, path, entries, &count, MAX_DIR_ENTRIES));
+    
     for (size_t i = 0; i < count; i++)
     {
-        puts(entries[i].name);
+        printf("%-4s ", entries[i].node_type == FS_FILE ? "FILE" : "DIR");
+        if (show_node) printf("0x%08X %2d ", entries[i].node, entries[i].node_links_count);
+        printf("%-27s", entries[i].name);
+        if (show_size && strcmp(entries[i].name, "..") != 0)
+        {
+            uint32_t size;
+            HANDLE_FS_ERROR(fs_size(&fs, entries[i].node, &size));
+            printf(" %d B", size);
+        }
+        putchar('\n');
     }
 }
 
@@ -251,13 +524,7 @@ void cmd_cd(const char* path)
             *(tmp_current + curr_len) = '/';
             *(tmp_current + curr_len + 1) = 0;
             
-            int result = fs_entry_info(&fs, tmp_current, &entries[0]);
-            
-            if (result != FS_OK)
-            {
-                print_fs_error(result);
-                return;
-            }
+            HANDLE_FS_ERROR(fs_entry_info(&fs, tmp_current, &entries[0]));
         }
     }
     
@@ -267,6 +534,43 @@ void cmd_cd(const char* path)
 void cmd_pwd()
 {
     puts(current_dir);
+}
+
+void cmd_exp(const char* path, size_t count)
+{
+    char full_path[FS_PATH_MAX_LENGTH];
+    absolute_path(path, full_path);
+    
+    fs_file_t file;
+    HANDLE_FS_ERROR(fs_file_open(&fs, full_path, FS_APPEND, &file));
+    
+    char buffer[256];
+    memset(buffer, 0xFF, 256);
+    size_t written;
+    while (count)
+    {
+        size_t c = count;
+        if (c > 256) c = 256;
+        HANDLE_FS_ERROR(fs_file_write(&fs, &file, buffer, c, &written));
+        count -= written;
+    }
+    
+    HANDLE_FS_ERROR(fs_file_close(&fs, &file));
+}
+
+void cmd_trunc(const char* path, size_t count)
+{
+    char full_path[FS_PATH_MAX_LENGTH];
+    absolute_path(path, full_path);
+    
+    fs_file_t file;
+    HANDLE_FS_ERROR(fs_file_open(&fs, full_path, 0, &file));
+    
+    HANDLE_FS_ERROR(fs_file_seek(&fs, &file, FS_SEEK_END, count));
+    
+    HANDLE_FS_ERROR(fs_file_discard(&fs, &file));
+    
+    HANDLE_FS_ERROR(fs_file_close(&fs, &file));
 }
 
 void print_fs_error(int fs_error_code)
@@ -286,8 +590,23 @@ void print_fs_error(int fs_error_code)
         case FS_BUFFER_TOO_SMALL: puts("Buffer is too small to handle result"); break;
         case FS_NOT_A_FILE: puts("Not a file"); break;
         case FS_NOT_EXISTS: puts("Not exists"); break;
-        case FS_FILE_ALREADY_CLOSED: puts("File is closed"); break;
+        case FS_FILE_CLOSED: puts("File is closed"); break;
         case FS_EOF: puts("End of file"); break;
+        case FS_ALREADY_EXISTS: puts("Already exists"); break;
+    }
+}
+
+void absolute_path(const char* path, char* result)
+{
+    if (path[0] != '/')
+    {
+        strcpy(result, current_dir);
+        size_t len = strlen(result);
+        strcpy(result + len, path);
+    }
+    else
+    {
+        strcpy(result, path);
     }
 }
 
@@ -419,7 +738,7 @@ int test()
     size_t count;
     
     fs_dir_list(&filesystem, "/", entries, &count, 256);
-    for (size_t i = 0; i < count; i++) printf("%s %d %d\n", entries[i].name, entries[i].node, entries[i].type);
+    for (size_t i = 0; i < count; i++) printf("%s %d %d\n", entries[i].name, entries[i].node, entries[i].node_type);
     
     
     

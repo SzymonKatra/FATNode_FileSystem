@@ -14,11 +14,13 @@
 #define FS_BUFFER_TOO_SMALL     10
 #define FS_NOT_A_FILE           11
 #define FS_NOT_EXISTS           12
-#define FS_FILE_ALREADY_CLOSED  13
+#define FS_FILE_CLOSED          13
 #define FS_EOF                  14
+#define FS_ALREADY_EXISTS       15
 
 #define FS_SECTOR_SIZE          128
 
+#define FS_PATH_MAX_LENGTH      255
 #define FS_NAME_MAX_LENGTH      27
 
 #define FS_FILE         1
@@ -64,7 +66,8 @@ typedef struct
 {
     char        name[FS_NAME_MAX_LENGTH + 1];
     uint32_t    node;
-    uint8_t     type;
+    uint8_t     node_type;
+    uint16_t    node_links_count;
 } fs_dir_entry_t;
 
 typedef struct
@@ -85,6 +88,7 @@ int fs_close(fs_t* fs);
 
 int fs_mkdir(fs_t* fs, const char* path);
 int fs_dir_entries_count(fs_t* fs, const char* path, uint32_t* result);
+int fs_size(fs_t* fs, uint32_t node, uint32_t* total_size);
 int fs_dir_list(fs_t* fs, const char* path, fs_dir_entry_t* results, size_t* count, size_t max_results);
 int fs_entry_info(fs_t* fs, const char* path, fs_dir_entry_t* result);
 int fs_link(fs_t* fs, const char* path, uint32_t node);
@@ -94,6 +98,7 @@ int fs_file_open(fs_t* fs, const char* path, uint8_t flags, fs_file_t* result);
 int fs_file_write(fs_t* fs, fs_file_t* file, const void* buffer, size_t size, size_t* written);
 int fs_file_read(fs_t* fs, fs_file_t* file, void* buffer, size_t size, size_t* read);
 int fs_file_seek(fs_t* fs, fs_file_t* file, uint8_t mode, int32_t pos);
+int fs_file_discard(fs_t* fs, fs_file_t* file);
 int fs_file_close(fs_t* fs, fs_file_t* file);
 
 #endif

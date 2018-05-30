@@ -179,9 +179,9 @@ int fs_mkdir(fs_t* fs, const char* path)
     
     uint32_t node = fs->root_node;
     
-    if (strlen(path) > 255) return FS_PATH_TOO_LONG;
+    if (strlen(path) > FS_PATH_MAX_LENGTH) return FS_PATH_TOO_LONG;
     
-    char pathBuffer[256];
+    char pathBuffer[FS_PATH_MAX_LENGTH + 1];
     strcpy(pathBuffer, path);
     char* name = strtok(pathBuffer, "/");
     while (name != NULL)
@@ -266,6 +266,48 @@ int fs_dir_entries_count(fs_t* fs, const char* path, uint32_t* result)
     return FS_OK;
 }
 
+int fs_size(fs_t* fs, uint32_t node, uint32_t* total_size)
+{
+    *total_size = 0;
+    
+    _fs_node_t node_data;
+    FS_CHECK_ERROR(_fs_read_node(fs, node, &node_data));
+    
+    if (node_data.type == FS_NODE_TYPE_FILE)
+    {
+        *total_size = node_data.size;
+    }
+    else if (node_data.type == FS_NODE_TYPE_DIR)
+    {
+        _fs_dir_cluster_t dir;
+    
+        uint32_t current_cluster = node_data.cluster_index;
+        do
+        {
+            size_t disk_pos = FS_SECTOR_POS(_fs_cluster_to_sector(fs, current_cluster));
+            FS_CHECK_ERROR(_fs_read_disk(fs, &dir, disk_pos, FS_SECTOR_SIZE));
+    
+            for (size_t i = 0; i < FS_REFERENCES_IN_CLUSTER; i++)
+            {
+                if (dir.ref[i].name[0] != 0)
+                {
+                    if (strcmp(dir.ref[i].name, ".") != 0 && strcmp(dir.ref[i].name, "..") != 0)
+                    {
+                        uint32_t size;
+                        FS_CHECK_ERROR(fs_size(fs, dir.ref[i].node, &size));
+                        *total_size += size;
+                    }
+                }
+            }
+        
+            FS_CHECK_ERROR(_fs_read_state(fs, current_cluster, &current_cluster));
+        }
+        while (current_cluster != FS_CLUSTER_EOF);
+    }
+    
+    return FS_OK;
+}
+
 int fs_dir_list(fs_t* fs, const char* path, fs_dir_entry_t* results, size_t* count, size_t max_results)
 {
     uint32_t node;
@@ -305,7 +347,8 @@ int fs_dir_list(fs_t* fs, const char* path, fs_dir_entry_t* results, size_t* cou
                 _fs_node_t entry_node_data;
                 FS_CHECK_ERROR(_fs_read_node(fs, dir->ref[i].node, &entry_node_data));
                 
-                results[*count].type = entry_node_data.type == FS_NODE_TYPE_FILE ? FS_FILE : FS_DIR;
+                results[*count].node_type = entry_node_data.type == FS_NODE_TYPE_FILE ? FS_FILE : FS_DIR;
+                results[*count].node_links_count = entry_node_data.links_count;
                 
                 (*count)++;
             }
@@ -322,6 +365,11 @@ int fs_link(fs_t* fs, const char* path, uint32_t node)
 {
     char dirpath[256];
     char filename[FS_NAME_MAX_LENGTH + 1];
+    
+    uint32_t target_node;
+    uint8_t target_code;
+    FS_CHECK_ERROR(_fs_find_node(fs, path, &target_node, &target_code));
+    if (target_code != FS_FIND_NOT_EXISTS) return FS_ALREADY_EXISTS;
         
     FS_CHECK_ERROR(_fs_split_path(path, dirpath, filename));
     
@@ -353,7 +401,8 @@ int fs_entry_info(fs_t* fs, const char* path, fs_dir_entry_t* result)
     
     _fs_node_t node_data;
     FS_CHECK_ERROR(_fs_read_node(fs, node, &node_data));  
-    result->type = node_data.type == FS_NODE_TYPE_DIR ? FS_DIR : FS_FILE;
+    result->node_type = node_data.type == FS_NODE_TYPE_DIR ? FS_DIR : FS_FILE;
+    result->node_links_count = node_data.links_count;
     
     return FS_OK;
 }
@@ -365,6 +414,8 @@ int fs_remove(fs_t* fs, const char* path)
     char dirpath[256];
     char name[FS_NAME_MAX_LENGTH + 1];
     FS_CHECK_ERROR(_fs_split_path(path, dirpath, name));
+    
+    if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0) return FS_WRONG_PATH;
     
     uint32_t dir_node;
     uint8_t dir_status;
@@ -398,7 +449,7 @@ int fs_remove(fs_t* fs, const char* path)
 int fs_file_open(fs_t* fs, const char* path, uint8_t flags, fs_file_t* result)
 {
     size_t len = strlen(path);
-    if (len > 255) return FS_PATH_TOO_LONG;
+    if (len > FS_PATH_MAX_LENGTH) return FS_PATH_TOO_LONG;
     if (*(path + len - 1) == '/') return FS_WRONG_PATH;
     
     uint8_t status;
@@ -409,7 +460,7 @@ int fs_file_open(fs_t* fs, const char* path, uint8_t flags, fs_file_t* result)
     {
         if (!(flags & FS_CREATE)) return FS_NOT_EXISTS;
         
-        char dirpath[256];
+        char dirpath[FS_PATH_MAX_LENGTH + 1];
         char filename[FS_NAME_MAX_LENGTH + 1];
         
         // create file
@@ -492,6 +543,8 @@ int fs_file_write(fs_t* fs, fs_file_t* file, const void* buffer, size_t size, si
 {
     *written = 0;
     
+    if (!file->is_opened) return FS_FILE_CLOSED;
+    
     const uint8_t* byte_buffer = (const uint8_t*)buffer;
     
     while (size)
@@ -542,15 +595,19 @@ int fs_file_write(fs_t* fs, fs_file_t* file, const void* buffer, size_t size, si
     }
     
     if (file->pos > file->size) file->size = file->pos;
+    
+    return FS_OK;
 }
 
 int fs_file_read(fs_t* fs, fs_file_t* file, void* buffer, size_t size, size_t* read)
 {
+    *read = 0;
+    
+    if (!file->is_opened) return FS_FILE_CLOSED;
+    
     if (file->pos >= file->size) return FS_EOF;
     
     if (file->pos + size > file->size) size = file->size - file->pos;
-    
-    *read = 0;
     
     uint8_t* byte_buffer = (uint8_t*)buffer;
     
@@ -589,10 +646,14 @@ int fs_file_read(fs_t* fs, fs_file_t* file, void* buffer, size_t size, size_t* r
             file->current_cluster_pos = 0;
         }
     }
+    
+    return FS_OK;
 }
 
 int fs_file_seek(fs_t* fs, fs_file_t* file, uint8_t mode, int32_t pos)
 {
+    if (!file->is_opened) return FS_FILE_CLOSED;
+    
     switch (mode)
     {
         case FS_SEEK_CURRENT: pos = file->pos + pos; break;
@@ -622,9 +683,31 @@ int fs_file_seek(fs_t* fs, fs_file_t* file, uint8_t mode, int32_t pos)
     return FS_OK;
 }
 
+int fs_file_discard(fs_t* fs, fs_file_t* file)
+{
+    if (!file->is_opened) return FS_FILE_CLOSED;
+    
+    file->size = file->pos;
+    
+    // free up all following current
+    uint32_t cluster_state;
+    FS_CHECK_ERROR(_fs_read_state(fs, file->current_cluster, &cluster_state));
+    while (cluster_state != FS_CLUSTER_EOF)
+    {
+        uint32_t next_cluster;
+        FS_CHECK_ERROR(_fs_read_state(fs, cluster_state, &next_cluster));
+        FS_CHECK_ERROR(_fs_write_state(fs, cluster_state, FS_CLUSTER_EMPTY));
+        cluster_state = next_cluster;
+    }
+            
+    FS_CHECK_ERROR(_fs_write_state(fs, file->current_cluster, FS_CLUSTER_EOF));
+    
+    return FS_OK;
+}
+
 int fs_file_close(fs_t* fs, fs_file_t* file)
 {
-    if (!file->is_opened) return FS_FILE_ALREADY_CLOSED;
+    if (!file->is_opened) return FS_FILE_CLOSED;
     
     _fs_node_t node_data;
     FS_CHECK_ERROR(_fs_read_node(fs, file->node, &node_data));
@@ -904,9 +987,9 @@ static int _fs_find_node(fs_t* fs, const char* path, uint32_t* result_node, uint
     *result_node = fs->root_node;
     *result_code = FS_FIND_DIR;
     
-    if (strlen(path) > 255) return FS_PATH_TOO_LONG;
+    if (strlen(path) > FS_PATH_MAX_LENGTH) return FS_PATH_TOO_LONG;
     
-    char pathBuffer[256];
+    char pathBuffer[FS_PATH_MAX_LENGTH + 1];
     strcpy(pathBuffer, path);
     char* name = strtok(pathBuffer, "/");
     while (name != NULL)
@@ -1042,7 +1125,7 @@ static size_t _fs_node_pos(fs_t* fs, uint32_t node_number)
 }
 static int _fs_split_path(const char* path, char* dirpath, char* filename)
 {
-    if (strlen(path) > 255) return FS_PATH_TOO_LONG;
+    if (strlen(path) > FS_PATH_MAX_LENGTH) return FS_PATH_TOO_LONG;
         
     strcpy(dirpath, path);
     char* separator = strrchr(dirpath, '/');
