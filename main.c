@@ -2,7 +2,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include "fs.h"
-#include "parser.h"
 
 #define MAX_COMMAND_LEN     255
 #define MAX_COMMAND_ARGS    10
@@ -30,8 +29,12 @@ char* args[MAX_COMMAND_ARGS];
 fs_dir_entry_t entries[MAX_DIR_ENTRIES];
 char current_dir[FS_PATH_MAX_LENGTH];
 
+size_t parse_input(char* input, char** output, size_t max_outputs);
+
 void init(int argc, char** argv);
+int loop();
 void cleanup();
+
 void cmd_cp(const char* source, const char* destination);
 void cmd_mv(const char* source, const char* destination);
 void cmd_mkdir(const char* path);
@@ -54,214 +57,31 @@ void print_fs_error(int fs_error_code);
 void absolute_path(const char* path, char* result);
 
 int main(int argc, char** argv)
-{    
-    printf(COLOR_GREEN);
-
+{      
     init(argc, argv);
-    
-    puts("Type help to get more information");
 
-    while (1)
-    {
-        printf(COLOR_RESET);
-        printf(COLOR_CYAN"%s"COLOR_RESET"$ ", current_dir);
-        fgets(cmd, MAX_COMMAND_LEN, stdin);
-        size_t args_count = parser_parse(cmd, args, MAX_COMMAND_ARGS);
-        
-        if (args_count == 0) continue;
-        
-        printf(COLOR_GREEN);
-        
-        if (args[0][0] == 0)
-        {
-            continue;
-        }
-        else if (strcmp(args[0], "cp") == 0)
-        {
-            if (args_count < 3)
-            {
-                puts("cp requires 2 arguments");
-                continue;
-            }
-            
-            cmd_cp(args[1], args[2]);
-        }
-        else if (strcmp(args[0], "mv") == 0)
-        {
-            if (args_count < 3)
-            {
-                puts("mv requires 2 arguments");
-                continue;
-            }
-            
-            cmd_mv(args[1], args[2]);
-        }
-        else if (strcmp(args[0], "mkdir") == 0)
-        {
-            if (args_count < 2)
-            {
-                puts("mkdir requires 1 argument");
-                continue;
-            }
-            
-            cmd_mkdir(args[1]);
-        }
-        else if (strcmp(args[0], "touch") == 0)
-        {
-            if (args_count < 2)
-            {
-                puts("touch required 1 argument");
-                continue;
-            }
-            
-            cmd_touch(args[1]);
-        }
-        else if (strcmp(args[0], "ln") == 0)
-        {
-            if (args_count < 3)
-            {
-                puts("ln required 2 arguments");
-                continue;
-            }
-            
-            cmd_ln(args[1], args[2]);
-        }
-        else if (strcmp(args[0], "rm") == 0)
-        {
-            if (args_count < 2)
-            {
-                puts("rm required 1 argument");
-                continue;
-            }
-            
-            cmd_rm(args[1]);
-        }
-        else if (strcmp(args[0], "import") == 0)
-        {
-            if (args_count < 3)
-            {
-                puts("import requires 2 arguments");
-                continue;
-            }
-            
-            cmd_import(args[1], args[2]);
-        }
-        else if (strcmp(args[0], "export") == 0)
-        {
-            if (args_count < 3)
-            {
-                puts("export requires 2 arguments");
-                continue;
-            }
-            
-            cmd_export(args[1], args[2]);
-        }
-        else if (strcmp(args[0], "edit") == 0)
-        {
-            if (args_count < 2)
-            {
-                puts("edit requires 1 argument");
-                continue;
-            }
-            
-            cmd_edit(args[1]);
-        }
-        else if (strcmp(args[0], "cat") == 0)
-        {
-            if (args_count < 2)
-            {
-                puts("cat requires 1 argument");
-                continue;
-            }
-            
-            cmd_cat(args[1]);
-        }
-        else if (strcmp(args[0], "exp") == 0)
-        {
-            if (args_count < 3)
-            {
-                puts("exp requires 2 arguments");
-                continue;
-            }
-            
-            cmd_exp(args[1], atoi(args[2]));
-        }
-        else if (strcmp(args[0], "trunc") == 0)
-        {
-            if (args_count < 3)
-            {
-                puts("trunc requires 2 arguments");
-                continue;
-            }
-            
-            cmd_trunc(args[1], atoi(args[2]));
-        }
-        else if (strcmp(args[0], "cd") == 0)
-        {
-            if (args_count < 2)
-            {
-                puts("cd requires 1 argument");
-                continue;
-            }
-            
-            cmd_cd(args[1]);
-        }
-        else if (strcmp(args[0], "ls") == 0)
-        {
-            char* path_arg = NULL;
-            int node = 0;
-            int size = 0;
-            for (size_t i = 1; i < args_count; i++)
-            {
-                if (args[i][0] == '-')
-                {
-                    if (strchr(args[i], 'd') != NULL) node = 1;
-                    if (strchr(args[i], 's') != NULL) size = 1;
-                }
-                else
-                {
-                    if (path_arg != NULL)
-                    {
-                        puts("Too many arguments specified");
-                    }
-                    else
-                    {
-                        path_arg = args[i];
-                    }
-                }
-            }
-            
-            if (path_arg == NULL) path_arg = current_dir;
-            
-            cmd_ls(path_arg, node, size);
-        }
-        else if (strcmp(args[0], "pwd") == 0)
-        {
-            cmd_pwd();
-        }
-        else if (strcmp(args[0], "fsinfo") == 0)
-        {
-            cmd_fsinfo();
-        }
-        else if (strcmp(args[0], "help") == 0)
-        {
-            cmd_help();
-        }
-        else if (strcmp(args[0], "exit") == 0)
-        {
-            break;
-        }
-        else
-        {
-            puts("Unknown command. Type help to get more information.");
-        }
-    }
-    
-    printf(COLOR_GREEN);
+    while (loop());   
     
     cleanup();
     
     return 0;
+}
+
+size_t parse_input(char* input, char** output, size_t max_outputs)
+{
+    size_t len = strlen(input);
+    if (input[len - 1] == '\n') input[len - 1] = 0;
+    
+    size_t current = 0;
+    
+    char* token = strtok(input, " ");
+    while (token != NULL && current < max_outputs)
+    {
+        output[current++] = token;
+        token = strtok(NULL, " ");
+    }
+    
+    return current;
 }
 
 void init(int argc, char** argv)
@@ -279,6 +99,8 @@ void init(int argc, char** argv)
     operations.read = &real_read;
     operations.write = &real_write;
     operations.close = &real_close;
+    
+    printf(COLOR_GREEN);
     
     if (argc >= 3)
     {
@@ -304,10 +126,212 @@ void init(int argc, char** argv)
     }
     
     strcpy(current_dir, "/");
+    
+    puts("Type help to get more information");
+}
+
+int loop()
+{
+    printf(COLOR_RESET);
+    printf(COLOR_CYAN"%s"COLOR_RESET"$ ", current_dir);
+    fgets(cmd, MAX_COMMAND_LEN, stdin);
+    size_t args_count = parse_input(cmd, args, MAX_COMMAND_ARGS);
+    
+    if (args_count == 0) return 1;
+    
+    printf(COLOR_GREEN);
+    
+    if (args[0][0] == 0)
+    {
+        return 1;
+    }
+    else if (strcmp(args[0], "cp") == 0)
+    {
+        if (args_count < 3)
+        {
+            puts("cp requires 2 arguments");
+            return 1;
+        }
+        
+        cmd_cp(args[1], args[2]);
+    }
+    else if (strcmp(args[0], "mv") == 0)
+    {
+        if (args_count < 3)
+        {
+            puts("mv requires 2 arguments");
+            return 1;
+        }
+        
+        cmd_mv(args[1], args[2]);
+    }
+    else if (strcmp(args[0], "mkdir") == 0)
+    {
+        if (args_count < 2)
+        {
+            puts("mkdir requires 1 argument");
+            return 1;
+        }
+        
+        cmd_mkdir(args[1]);
+    }
+    else if (strcmp(args[0], "touch") == 0)
+    {
+        if (args_count < 2)
+        {
+            puts("touch required 1 argument");
+            return 1;
+        }
+        
+        cmd_touch(args[1]);
+    }
+    else if (strcmp(args[0], "ln") == 0)
+    {
+        if (args_count < 3)
+        {
+            puts("ln required 2 arguments");
+            return 1;
+        }
+        
+        cmd_ln(args[1], args[2]);
+    }
+    else if (strcmp(args[0], "rm") == 0)
+    {
+        if (args_count < 2)
+        {
+            puts("rm required 1 argument");
+            return 1;
+        }
+        
+        cmd_rm(args[1]);
+    }
+    else if (strcmp(args[0], "import") == 0)
+    {
+        if (args_count < 3)
+        {
+            puts("import requires 2 arguments");
+            return 1;
+        }
+        
+        cmd_import(args[1], args[2]);
+    }
+    else if (strcmp(args[0], "export") == 0)
+    {
+        if (args_count < 3)
+        {
+            puts("export requires 2 arguments");
+            return 1;
+        }
+        
+        cmd_export(args[1], args[2]);
+    }
+    else if (strcmp(args[0], "edit") == 0)
+    {
+        if (args_count < 2)
+        {
+            puts("edit requires 1 argument");
+            return 1;
+        }
+        
+        cmd_edit(args[1]);
+    }
+    else if (strcmp(args[0], "cat") == 0)
+    {
+        if (args_count < 2)
+        {
+            puts("cat requires 1 argument");
+            return 1;
+        }
+        
+        cmd_cat(args[1]);
+    }
+    else if (strcmp(args[0], "exp") == 0)
+    {
+        if (args_count < 3)
+        {
+            puts("exp requires 2 arguments");
+            return 1;
+        }
+        
+        cmd_exp(args[1], atoi(args[2]));
+    }
+    else if (strcmp(args[0], "trunc") == 0)
+    {
+        if (args_count < 3)
+        {
+            puts("trunc requires 2 arguments");
+            return 1;
+        }
+        
+        cmd_trunc(args[1], atoi(args[2]));
+    }
+    else if (strcmp(args[0], "cd") == 0)
+    {
+        if (args_count < 2)
+        {
+            puts("cd requires 1 argument");
+            return 1;
+        }
+        
+        cmd_cd(args[1]);
+    }
+    else if (strcmp(args[0], "ls") == 0)
+    {
+        char* path_arg = NULL;
+        int node = 0;
+        int size = 0;
+        for (size_t i = 1; i < args_count; i++)
+        {
+            if (args[i][0] == '-')
+            {
+                if (strchr(args[i], 'd') != NULL) node = 1;
+                if (strchr(args[i], 's') != NULL) size = 1;
+            }
+            else
+            {
+                if (path_arg != NULL)
+                {
+                    puts("Too many arguments specified");
+                }
+                else
+                {
+                    path_arg = args[i];
+                }
+            }
+        }
+        
+        if (path_arg == NULL) path_arg = current_dir;
+        
+        cmd_ls(path_arg, node, size);
+    }
+    else if (strcmp(args[0], "pwd") == 0)
+    {
+        cmd_pwd();
+    }
+    else if (strcmp(args[0], "fsinfo") == 0)
+    {
+        cmd_fsinfo();
+    }
+    else if (strcmp(args[0], "help") == 0)
+    {
+        cmd_help();
+    }
+    else if (strcmp(args[0], "exit") == 0)
+    {
+        return 0;
+    }
+    else
+    {
+        puts("Unknown command. Type help to get more information.");
+    }
+        
+    return 1;
 }
 
 void cleanup()
 {
+    printf(COLOR_GREEN);
+    
     if (fs_close(&fs) != FS_OK)
     {
         puts("Error occured while closing file system.");
