@@ -1,7 +1,7 @@
 # FATNode file system
 
 ## Summary
-This is an implementation of file system which I designed for my operating system classes. It combines idea of File Allocation Table and UNIX inodes.
+This is an implementation of a file system which I designed for my operating system classes. It combines idea of File Allocation Table and UNIX inodes.
 
 ## Design
 Entire disk is divided into small sectors of preconceived size (configured by FS_SECTOR_SIZE macro, 128 in current implementation).
