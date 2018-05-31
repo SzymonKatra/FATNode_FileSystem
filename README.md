@@ -19,7 +19,7 @@ Bootstrap sector is followed by **allocation table** which consist of few sector
 * **```0xFFFFFF00```** - empty cluster holding nodes
 * **```0xFFFFFF__```** - cluster holding nodes, __ indicates how much node structures are in use
 * **```0xFFFFFF08```** - full cluster holding nodes
-* **other value** - indicates number of next cluster containing continuation of data stored in this cluster
+* **other value** - indicates index of next cluster containing continuation of data stored in this cluster
 
 The rest of sectors in the file system are called **clusters** and they are used to hold file contents, directory structures or nodes.
 
