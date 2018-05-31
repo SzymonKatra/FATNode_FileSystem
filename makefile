@@ -1,9 +1,10 @@
 CC=gcc
 
-all : cc
+all :
+	$(CC) main.c fs.c -pedantic -o fs
 
-cc :
+debug : 
 	$(CC) main.c fs.c -pedantic -o fs -g
 
 clean :
-	rm main
+	rm fs
