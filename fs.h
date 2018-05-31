@@ -81,6 +81,25 @@ typedef struct
     uint8_t     is_opened;
 } fs_file_t;
 
+typedef struct
+{
+    uint32_t sectors;
+    uint32_t clusters;
+    uint32_t table_sectors;
+    uint32_t free_clusters;
+    uint32_t node_clusters;
+    uint32_t data_clusters;
+    uint32_t nodes;
+    uint32_t allocated_nodes;
+    uint32_t files_size;
+    uint32_t dir_structures_size;
+    uint32_t nodes_size;
+    uint32_t used_space;
+    uint32_t free_space;
+    uint32_t total_size;
+    uint32_t usable_space;
+} fs_info_t;
+
 int fs_create(const fs_disk_operations_t* operations, size_t size, fs_t* result_fs);
 int fs_open(const fs_disk_operations_t* operations, fs_t* result_fs);
 
@@ -88,11 +107,12 @@ int fs_close(fs_t* fs);
 
 int fs_mkdir(fs_t* fs, const char* path);
 int fs_dir_entries_count(fs_t* fs, const char* path, uint32_t* result);
-int fs_size(fs_t* fs, uint32_t node, uint32_t* total_size);
+int fs_size(fs_t* fs, uint32_t node, uint32_t* files_size);
 int fs_dir_list(fs_t* fs, const char* path, fs_dir_entry_t* results, size_t* count, size_t max_results);
 int fs_entry_info(fs_t* fs, const char* path, fs_dir_entry_t* result);
 int fs_link(fs_t* fs, const char* path, uint32_t node);
 int fs_remove(fs_t* fs, const char* path);
+int fs_info(fs_t* fs, fs_info_t* result);
 
 int fs_file_open(fs_t* fs, const char* path, uint8_t flags, fs_file_t* result);
 int fs_file_write(fs_t* fs, fs_file_t* file, const void* buffer, size_t size, size_t* written);

@@ -9,6 +9,7 @@
 #define MAX_DIR_ENTRIES     255
 
 #define COLOR_GREEN     	"\x1b[92m"
+#define COLOR_CYAN          "\x1b[96m"
 #define COLOR_RESET			"\x1b[0m"
 
 #define HANDLE_FS_ERROR(x)  do { int result = x; if (result != FS_OK) { print_fs_error(result); return; } } while(0);
@@ -46,6 +47,8 @@ void cmd_cd(const char* path);
 void cmd_pwd();
 void cmd_exp(const char* path, size_t count);
 void cmd_trunc(const char* path, size_t count);
+void cmd_fsinfo();
+void cmd_help();
 
 void print_fs_error(int fs_error_code);
 void absolute_path(const char* path, char* result);
@@ -61,7 +64,7 @@ int main(int argc, char** argv)
     while (1)
     {
         printf(COLOR_RESET);
-        printf(COLOR_GREEN"%s"COLOR_RESET"$ ", current_dir);
+        printf(COLOR_CYAN"%s"COLOR_RESET"$ ", current_dir);
         fgets(cmd, MAX_COMMAND_LEN, stdin);
         size_t args_count = parser_parse(cmd, args, MAX_COMMAND_ARGS);
         
@@ -238,11 +241,11 @@ int main(int argc, char** argv)
         }
         else if (strcmp(args[0], "fsinfo") == 0)
         {
-            
+            cmd_fsinfo();
         }
         else if (strcmp(args[0], "help") == 0)
         {
-            
+            cmd_help();
         }
         else if (strcmp(args[0], "exit") == 0)
         {
@@ -250,7 +253,7 @@ int main(int argc, char** argv)
         }
         else
         {
-            puts("Unknown command. Type help to get more information");
+            puts("Unknown command. Type help to get more information.");
         }
     }
     
@@ -263,7 +266,13 @@ int main(int argc, char** argv)
 
 void init(int argc, char** argv)
 {
-    if (argc < 2) exit(-1);
+    if (argc < 2)
+    {
+        puts(COLOR_RESET"Usage: ");
+        puts("Open existing:    ./fs file_name");
+        puts("Create new:       ./fs file_name size_in_bytes");
+        exit(-1);
+    }
     
     filename = argv[1];
     
@@ -276,22 +285,22 @@ void init(int argc, char** argv)
         operations.init = &real_init_create;
         if (fs_create(&operations, atoi(argv[2]), &fs) != FS_OK)
         {
-            puts("Error occurred while creating file system");
+            puts("Error occurred while creating file system.");
             exit(-1);
         }
         
-        puts("File system successfully created");
+        puts("File system successfully created.");
     }
     else
     {
         operations.init = &real_init_open;
         if (fs_open(&operations, &fs) != FS_OK)
         {
-            puts("Error occured while opening file system");
+            puts("Error occured while opening file system.");
             exit(-1);
         }
         
-        puts("File system successfully opened");
+        puts("File system successfully opened.");
     }
     
     strcpy(current_dir, "/");
@@ -301,11 +310,11 @@ void cleanup()
 {
     if (fs_close(&fs) != FS_OK)
     {
-        puts("Error occured while closing file system");
+        puts("Error occured while closing file system.");
         exit(-1);
     }
     
-    puts("File system successfully closed");
+    puts("File system successfully closed.");
 }
 
 void cmd_cp(const char* source, const char* destination)
@@ -509,8 +518,11 @@ void cmd_cat(const char* path)
 
 void cmd_ls(const char* path, int show_node, int show_size)
 {
+    char full_path[FS_PATH_MAX_LENGTH];
+    absolute_path(path, full_path);
+    
     size_t count;
-    HANDLE_FS_ERROR(fs_dir_list(&fs, path, entries, &count, MAX_DIR_ENTRIES));
+    HANDLE_FS_ERROR(fs_dir_list(&fs, full_path, entries, &count, MAX_DIR_ENTRIES));
     
     for (size_t i = 0; i < count; i++)
     {
@@ -617,6 +629,43 @@ void cmd_trunc(const char* path, size_t count)
     HANDLE_FS_ERROR(fs_file_discard(&fs, &file));
     
     HANDLE_FS_ERROR(fs_file_close(&fs, &file));
+}
+
+void cmd_fsinfo()
+{
+    fs_info_t info;
+    HANDLE_FS_ERROR(fs_info(&fs, &info));
+    
+    printf("Sectors (total / boot / allocation table): %d / %d / %d\n", info.sectors, 1, info.table_sectors);
+    printf("Clusters (total / free / node / data): %d / %d / %d / %d\n", info.clusters, info.free_clusters, info.node_clusters, info.data_clusters);
+    printf("Nodes (used / allocated): %d / %d\n", info.nodes, info.allocated_nodes);
+    printf("File system size (total / usable): %d B / %d B\n", info.total_size, info.usable_space);    
+    
+    printf("Size (files / directory structures / nodes): %d B / %d B / %d B\n", info.files_size, info.dir_structures_size, info.nodes_size);
+    
+    printf("Usage: %d / %d B\n", info.used_space, info.usable_space);
+}
+
+void cmd_help()
+{
+    puts("cp source destination - Copies file from source to destination.");
+    puts("mv source destination - Moves file from soruce to destination.");
+    puts("mkdir path - Creates directory. Allows nested directories.");
+    puts("touch path - Creates empty file.");
+    puts("ln file_path link_name - Creates hard link of link_name to file_path.");
+    puts("rm path - Removes file or directory recursively.");
+    puts("import real_source destination - Imports external file into file system.");
+    puts("export source real_destination - Exports file from file system.");
+    puts("edit file - Enters edit mode for specified file.");
+    puts("cat file - Prints content of specified file");
+    puts("ls [path] [-ds] - Lists specified directory. If path not specified then current directory is used. Flag -d - show detailed information (node index, links count). Flag -s - show size of the files and directories.");
+    puts("cd dir - Change current directory.");
+    puts("pwd - Prints path to current directory.");
+    puts("exp file bytes - Expands file by specified amount of bytes");
+    puts("trunc file bytes - Truncates file by specified amount of bytes");
+    puts("fsinfo - Displays info about file system");
+    puts("exit - Closes file system and exists application.");
+    puts("help - Displays help");
 }
 
 void print_fs_error(int fs_error_code)

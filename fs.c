@@ -128,7 +128,8 @@ int fs_create(const fs_disk_operations_t* operations, size_t size, fs_t* result_
     _fs_node_t root_node_data;
     FS_CHECK_ERROR(_fs_read_node(result_fs, result_fs->root_node, &root_node_data));
     root_node_data.type = FS_NODE_TYPE_DIR;
-    root_node_data.links_count = 1;
+    root_node_data.links_count = 2;
+    root_node_data.size = FS_SECTOR_SIZE;
     
     FS_CHECK_ERROR(_fs_create_dir(result_fs, result_fs->root_node, result_fs->root_node, &root_node_data.cluster_index));  
     
@@ -202,6 +203,7 @@ int fs_mkdir(fs_t* fs, const char* path)
             new_node_data.type = FS_NODE_TYPE_DIR;
             new_node_data.links_count = 2;
             new_node_data.modification_time = (uint32_t)time(NULL);
+            new_node_data.size = FS_SECTOR_SIZE;
             
             FS_CHECK_ERROR(_fs_create_dir(fs, new_node, node, &new_node_data.cluster_index));
             
@@ -266,16 +268,16 @@ int fs_dir_entries_count(fs_t* fs, const char* path, uint32_t* result)
     return FS_OK;
 }
 
-int fs_size(fs_t* fs, uint32_t node, uint32_t* total_size)
+int fs_size(fs_t* fs, uint32_t node, uint32_t* files_size)
 {
-    *total_size = 0;
+    *files_size = 0;
     
     _fs_node_t node_data;
     FS_CHECK_ERROR(_fs_read_node(fs, node, &node_data));
     
     if (node_data.type == FS_NODE_TYPE_FILE)
     {
-        *total_size = node_data.size;
+        *files_size = node_data.size;
     }
     else if (node_data.type == FS_NODE_TYPE_DIR)
     {
@@ -295,7 +297,7 @@ int fs_size(fs_t* fs, uint32_t node, uint32_t* total_size)
                     {
                         uint32_t size;
                         FS_CHECK_ERROR(fs_size(fs, dir.ref[i].node, &size));
-                        *total_size += size;
+                        *files_size += size;
                     }
                 }
             }
@@ -445,6 +447,81 @@ int fs_remove(fs_t* fs, const char* path)
     return FS_OK;
 }
 
+int fs_info(fs_t* fs, fs_info_t* result)
+{
+    result->sectors = fs->sectors_count;
+    result->clusters = fs->clusters_count;
+    result->table_sectors = fs->table_sectors_count;
+    result->free_clusters = 0;
+    result->node_clusters = 0;
+    result->data_clusters = 0;
+    result->nodes = 0;
+    result->files_size = 0;
+    result->dir_structures_size = 0;
+
+    uint32_t current_table_sector_index = 0xFFFFFFFF;
+    _fs_table_sector_t* table_sector = (_fs_table_sector_t*)fs->buffer;
+    
+    for (uint32_t i = 0; i < fs->clusters_count; i++)
+    {
+        uint32_t required_table_sector_index = i / FS_STATES_IN_SECTOR;
+        uint32_t array_index = i % FS_STATES_IN_SECTOR;
+        
+        if (current_table_sector_index != required_table_sector_index)
+        {
+            uint32_t final_table_sector_index = required_table_sector_index + fs->table_sector_start;
+            FS_CHECK_ERROR(_fs_read_sector_buffer(fs, final_table_sector_index));
+            
+            current_table_sector_index = required_table_sector_index;
+        }
+        
+        uint32_t cluster_state = table_sector->state[array_index];
+        if (cluster_state == FS_CLUSTER_EMPTY)
+        {
+            result->free_clusters++;
+        }
+        else if (cluster_state >= FS_CLUSTER_NODE_BEGIN && cluster_state <= FS_CLUSTER_NODE_FULL)
+        {
+            result->node_clusters++;
+            result->nodes += cluster_state & 0xFF;
+            
+            _fs_node_cluster_t nodes;
+            size_t disk_pos = FS_SECTOR_POS(_fs_cluster_to_sector(fs, i));
+            FS_CHECK_ERROR(_fs_read_disk(fs, &nodes, disk_pos, FS_SECTOR_SIZE));
+            
+            for (size_t ni = 0; ni < FS_NODES_IN_CLUSTER; ni++)
+            {
+                _fs_node_t* node = &nodes.nodes[ni];
+                if (!(node->flags & FS_NODE_FLAGS_INUSE)) continue;
+                
+                if (node->type == FS_NODE_TYPE_FILE)
+                {
+                    result->files_size += node->size;
+                }
+                else if (node->type == FS_NODE_TYPE_DIR)
+                {
+                    result->dir_structures_size += node->size;
+                }
+            }
+        }
+        else
+        {
+            result->data_clusters++;
+        }
+    }
+    
+    result->allocated_nodes = result->node_clusters * FS_NODES_IN_CLUSTER;
+    
+    result->nodes_size = result->node_clusters * FS_SECTOR_SIZE;
+    
+    result->used_space = result->files_size + result->dir_structures_size + result->nodes_size;;
+    result->total_size = FS_SECTOR_SIZE * fs->sectors_count;
+    result->usable_space = FS_SECTOR_SIZE * fs->clusters_count;
+    
+    result->free_space = result->usable_space - result->used_space;
+    
+    return FS_OK;
+}
 
 int fs_file_open(fs_t* fs, const char* path, uint8_t flags, fs_file_t* result)
 {
@@ -932,6 +1009,9 @@ static int _fs_dir_add_entry(fs_t* fs, uint32_t dir_node, const char* entry_name
     
     uint32_t new_cluster;
     FS_CHECK_ERROR(_fs_find_free_cluster(fs, &new_cluster));
+    
+    node_data.size += FS_SECTOR_SIZE;
+    FS_CHECK_ERROR(_fs_write_node(fs, dir_node, &node_data));
     
     FS_CHECK_ERROR(_fs_write_state(fs, prev_cluster, new_cluster)); // link to next cluster
     FS_CHECK_ERROR(_fs_write_state(fs, new_cluster, FS_CLUSTER_EOF));
