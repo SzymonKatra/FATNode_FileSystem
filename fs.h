@@ -68,6 +68,7 @@ typedef struct
     uint32_t    node;
     uint8_t     node_type;
     uint16_t    node_links_count;
+    uint32_t    node_modification_time;
 } fs_dir_entry_t;
 
 typedef struct

@@ -130,6 +130,7 @@ int fs_create(const fs_disk_operations_t* operations, size_t size, fs_t* result_
     root_node_data.type = FS_NODE_TYPE_DIR;
     root_node_data.links_count = 2;
     root_node_data.size = FS_SECTOR_SIZE;
+    root_node_data.modification_time = (uint32_t)time(NULL);
     
     FS_CHECK_ERROR(_fs_create_dir(result_fs, result_fs->root_node, result_fs->root_node, &root_node_data.cluster_index));  
     
@@ -351,6 +352,7 @@ int fs_dir_list(fs_t* fs, const char* path, fs_dir_entry_t* results, size_t* cou
                 
                 results[*count].node_type = entry_node_data.type == FS_NODE_TYPE_FILE ? FS_FILE : FS_DIR;
                 results[*count].node_links_count = entry_node_data.links_count;
+                results[*count].node_modification_time = entry_node_data.modification_time;
                 
                 (*count)++;
             }
@@ -405,6 +407,7 @@ int fs_entry_info(fs_t* fs, const char* path, fs_dir_entry_t* result)
     FS_CHECK_ERROR(_fs_read_node(fs, node, &node_data));  
     result->node_type = node_data.type == FS_NODE_TYPE_DIR ? FS_DIR : FS_FILE;
     result->node_links_count = node_data.links_count;
+    result->node_modification_time = node_data.modification_time;
     
     return FS_OK;
 }
@@ -996,6 +999,9 @@ static int _fs_dir_add_entry(fs_t* fs, uint32_t dir_node, const char* entry_name
                 
                 FS_CHECK_ERROR(_fs_write_cluster_buffer(fs, current_cluster));
                 
+                node_data.modification_time = (uint32_t)time(NULL);
+                FS_CHECK_ERROR(_fs_write_node(fs, dir_node, &node_data));
+                
                 return FS_OK;
             }
         }
@@ -1011,6 +1017,7 @@ static int _fs_dir_add_entry(fs_t* fs, uint32_t dir_node, const char* entry_name
     FS_CHECK_ERROR(_fs_find_free_cluster(fs, &new_cluster));
     
     node_data.size += FS_SECTOR_SIZE;
+    node_data.modification_time = (uint32_t)time(NULL);
     FS_CHECK_ERROR(_fs_write_node(fs, dir_node, &node_data));
     
     FS_CHECK_ERROR(_fs_write_state(fs, prev_cluster, new_cluster)); // link to next cluster
@@ -1048,6 +1055,9 @@ static int _fs_dir_remove_entry(fs_t* fs, uint32_t dir_node, const char* entry_n
                 memset(&dir->ref[i], 0, sizeof(_fs_reference_t));
                 
                 FS_CHECK_ERROR(_fs_write_cluster_buffer(fs, current_cluster));
+                
+                node_data.modification_time = (uint32_t)time(NULL);
+                FS_CHECK_ERROR(_fs_write_node(fs, dir_node, &node_data));
                 
                 return FS_OK;
             }

@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include "fs.h"
 
 #define MAX_COMMAND_LEN     255
@@ -45,7 +46,7 @@ void cmd_import(const char* real_source, const char* destination);
 void cmd_export(const char* source, const char* real_destination);
 void cmd_edit(const char* path);
 void cmd_cat(const char* path);
-void cmd_ls(const char* path, int show_node, int show_size);
+void cmd_ls(const char* path, int show_details, int show_size);
 void cmd_cd(const char* path);
 void cmd_pwd();
 void cmd_exp(const char* path, size_t count);
@@ -278,13 +279,13 @@ int loop()
     else if (strcmp(args[0], "ls") == 0)
     {
         char* path_arg = NULL;
-        int node = 0;
+        int details = 0;
         int size = 0;
         for (size_t i = 1; i < args_count; i++)
         {
             if (args[i][0] == '-')
             {
-                if (strchr(args[i], 'd') != NULL) node = 1;
+                if (strchr(args[i], 'd') != NULL) details = 1;
                 if (strchr(args[i], 's') != NULL) size = 1;
             }
             else
@@ -302,7 +303,7 @@ int loop()
         
         if (path_arg == NULL) path_arg = current_dir;
         
-        cmd_ls(path_arg, node, size);
+        cmd_ls(path_arg, details, size);
     }
     else if (strcmp(args[0], "pwd") == 0)
     {
@@ -540,7 +541,7 @@ void cmd_cat(const char* path)
     putchar('\n');
 }
 
-void cmd_ls(const char* path, int show_node, int show_size)
+void cmd_ls(const char* path, int show_details, int show_size)
 {
     char full_path[FS_PATH_MAX_LENGTH];
     absolute_path(path, full_path);
@@ -551,8 +552,17 @@ void cmd_ls(const char* path, int show_node, int show_size)
     for (size_t i = 0; i < count; i++)
     {
         printf("%-4s ", entries[i].node_type == FS_FILE ? "FILE" : "DIR");
-        if (show_node) printf("0x%08X %2d ", entries[i].node, entries[i].node_links_count);
-        printf("%-27s", entries[i].name);
+        if (show_details)
+        {
+            time_t raw_time = (time_t)entries[i].node_modification_time;
+            struct tm* time = localtime(&raw_time);
+            
+            char tbuffer[20];
+            strftime(tbuffer, 20, "%Y-%m-%d %H:%M:%S", time);
+            
+            printf("0x%08X %2d %s ", entries[i].node, entries[i].node_links_count, tbuffer);
+        }
+        printf(" %-27s", entries[i].name);
         if (show_size && strcmp(entries[i].name, "..") != 0)
         {
             uint32_t size;
