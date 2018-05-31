@@ -20,9 +20,9 @@
 #define FS_NODE_TYPE_FILE       1
 #define FS_NODE_TYPE_DIR        2
 
-#define FS_FIND_FILE        1
-#define FS_FIND_DIR         2
-#define FS_FIND_NOT_EXISTS  3
+#define FS_FIND_FILE            1
+#define FS_FIND_DIR             2
+#define FS_FIND_NOT_EXISTS      3
 
 #define FS_NODE_FLAGS_INUSE     (1 << 0)
 
@@ -365,6 +365,26 @@ int fs_dir_list(fs_t* fs, const char* path, fs_dir_entry_t* results, size_t* cou
     return FS_OK;
 }
 
+int fs_entry_info(fs_t* fs, const char* path, fs_dir_entry_t* result)
+{
+    char dirpath[256];
+    FS_CHECK_ERROR(_fs_split_path(path, dirpath, result->name));
+    
+    uint32_t node;
+    uint8_t status; 
+    FS_CHECK_ERROR(_fs_find_node(fs, path, &node, &status));
+    if (status == FS_FIND_NOT_EXISTS) return FS_NOT_EXISTS; 
+    result->node = node;   
+    
+    _fs_node_t node_data;
+    FS_CHECK_ERROR(_fs_read_node(fs, node, &node_data));  
+    result->node_type = node_data.type == FS_NODE_TYPE_DIR ? FS_DIR : FS_FILE;
+    result->node_links_count = node_data.links_count;
+    result->node_modification_time = node_data.modification_time;
+    
+    return FS_OK;
+}
+
 int fs_link(fs_t* fs, const char* path, uint32_t node)
 {
     char dirpath[256];
@@ -388,26 +408,6 @@ int fs_link(fs_t* fs, const char* path, uint32_t node)
     FS_CHECK_ERROR(_fs_find_node(fs, dirpath, &dir_node, &dir_result));
     
     FS_CHECK_ERROR(_fs_dir_add_entry(fs, dir_node, filename, node));
-    
-    return FS_OK;
-}
-
-int fs_entry_info(fs_t* fs, const char* path, fs_dir_entry_t* result)
-{
-    char dirpath[256];
-    FS_CHECK_ERROR(_fs_split_path(path, dirpath, result->name));
-    
-    uint32_t node;
-    uint8_t status; 
-    FS_CHECK_ERROR(_fs_find_node(fs, path, &node, &status));
-    if (status == FS_FIND_NOT_EXISTS) return FS_NOT_EXISTS; 
-    result->node = node;   
-    
-    _fs_node_t node_data;
-    FS_CHECK_ERROR(_fs_read_node(fs, node, &node_data));  
-    result->node_type = node_data.type == FS_NODE_TYPE_DIR ? FS_DIR : FS_FILE;
-    result->node_links_count = node_data.links_count;
-    result->node_modification_time = node_data.modification_time;
     
     return FS_OK;
 }
@@ -1201,10 +1201,12 @@ static uint32_t _fs_cluster_to_sector(fs_t* fs, uint32_t cluster)
 {
     return fs->clusters_sector_start + cluster;
 }
+
 static size_t _fs_cluster_state_pos(fs_t* fs, uint32_t cluster)
 {
     return FS_SECTOR_POS(fs->table_sector_start) + cluster * sizeof(uint32_t);
 }
+
 static size_t _fs_node_pos(fs_t* fs, uint32_t node_number)
 {
     size_t index = node_number & 0x000000FF;
@@ -1213,6 +1215,7 @@ static size_t _fs_node_pos(fs_t* fs, uint32_t node_number)
     
     return FS_SECTOR_POS(sector) + index * sizeof(_fs_node_t);
 }
+
 static int _fs_split_path(const char* path, char* dirpath, char* filename)
 {
     if (strlen(path) > FS_PATH_MAX_LENGTH) return FS_PATH_TOO_LONG;
@@ -1235,26 +1238,31 @@ static int _fs_write_state(fs_t* fs, uint32_t cluster, uint32_t new_state)
     
     return _fs_write_disk(fs, &new_state, pos, sizeof(uint32_t));
 }
+
 static int _fs_write_node(fs_t* fs, uint32_t node_number, const _fs_node_t* node_data)
 {
     size_t pos = _fs_node_pos(fs, node_number);
     
     return _fs_write_disk(fs, node_data, pos, sizeof(_fs_node_t));
 }
+
 static int _fs_write_cluster_buffer(fs_t* fs, uint32_t cluster) // uses fs->buffer
 {
     size_t sector_index = _fs_cluster_to_sector(fs, cluster);
     
     return _fs_write_sector_buffer(fs, sector_index);
 }
+
 static int _fs_write_sector_buffer(fs_t* fs, size_t sector_index) // uses fs->buffer
 {
     return _fs_write_disk_buffer(fs, FS_SECTOR_POS(sector_index), FS_SECTOR_SIZE);
 }
+
 static int _fs_write_disk_buffer(fs_t* fs, size_t position, size_t size) // uses fs->buffer
 {
     return _fs_write_disk(fs, fs->buffer, position, size);
 }
+
 static int _fs_write_disk(fs_t* fs, const void* buffer, size_t position, size_t size)
 {
     return fs->operations.write(fs->state, buffer, position, size);
@@ -1266,26 +1274,31 @@ static int _fs_read_state(fs_t* fs, uint32_t cluster, uint32_t* result_state)
     
     return _fs_read_disk(fs, result_state, pos, sizeof(uint32_t));
 }
+
 static int _fs_read_node(fs_t* fs, uint32_t node_number, _fs_node_t* node_data)
 {
     size_t pos = _fs_node_pos(fs, node_number);
     
     return _fs_read_disk(fs, node_data, pos, sizeof(_fs_node_t));
 }
+
 static int _fs_read_cluster_buffer(fs_t* fs, uint32_t cluster) // uses fs->buffer
 {
     size_t sector_index = _fs_cluster_to_sector(fs, cluster);
     
     return _fs_read_sector_buffer(fs, sector_index);
 }
+
 static int _fs_read_sector_buffer(fs_t* fs, size_t sector_index) // uses fs->buffer
 {
     return _fs_read_disk_buffer(fs, FS_SECTOR_POS(sector_index), FS_SECTOR_SIZE);
 }
+
 static int _fs_read_disk_buffer(fs_t* fs, size_t position, size_t size) // uses fs->buffer
 {
     return _fs_read_disk(fs, fs->buffer, position, size);
 }
+
 static int _fs_read_disk(fs_t* fs, void* buffer, size_t position, size_t size)
 {
     return fs->operations.read(fs->state, buffer, position, size);

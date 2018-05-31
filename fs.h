@@ -84,26 +84,25 @@ typedef struct
 
 typedef struct
 {
-    uint32_t sectors;
-    uint32_t clusters;
-    uint32_t table_sectors;
-    uint32_t free_clusters;
-    uint32_t node_clusters;
-    uint32_t data_clusters;
-    uint32_t nodes;
-    uint32_t allocated_nodes;
-    uint32_t files_size;
-    uint32_t dir_structures_size;
-    uint32_t nodes_size;
-    uint32_t used_space;
-    uint32_t free_space;
-    uint32_t total_size;
-    uint32_t usable_space;
+    uint32_t    sectors;
+    uint32_t    clusters;
+    uint32_t    table_sectors;
+    uint32_t    free_clusters;
+    uint32_t    node_clusters;
+    uint32_t    data_clusters;
+    uint32_t    nodes;
+    uint32_t    allocated_nodes;
+    uint32_t    files_size;
+    uint32_t    dir_structures_size;
+    uint32_t    nodes_size;
+    uint32_t    used_space;
+    uint32_t    free_space;
+    uint32_t    total_size;
+    uint32_t    usable_space;
 } fs_info_t;
 
 int fs_create(const fs_disk_operations_t* operations, size_t size, fs_t* result_fs);
 int fs_open(const fs_disk_operations_t* operations, fs_t* result_fs);
-
 int fs_close(fs_t* fs);
 
 int fs_mkdir(fs_t* fs, const char* path);

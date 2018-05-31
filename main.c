@@ -16,21 +16,13 @@
 
 #define TMP_FILENAME        "tmp"
 
-int real_init_create(void ** result_state);
-int real_init_open(void ** result_state);
-int real_read(void* state, void* buffer, size_t position, size_t size);
-int real_write(void* state, const void* buffer, size_t position, size_t size);
-int real_close(void* state);
-
-const char* filename;
+const char*     filename;
 fs_disk_operations_t operations;
-fs_t fs;
-char cmd[MAX_COMMAND_LEN];
-char* args[MAX_COMMAND_ARGS];
-fs_dir_entry_t entries[MAX_DIR_ENTRIES];
-char current_dir[FS_PATH_MAX_LENGTH];
-
-size_t parse_input(char* input, char** output, size_t max_outputs);
+fs_t            fs;
+char            cmd[MAX_COMMAND_LEN];
+char*           args[MAX_COMMAND_ARGS];
+fs_dir_entry_t  entries[MAX_DIR_ENTRIES];
+char            current_dir[FS_PATH_MAX_LENGTH];
 
 void init(int argc, char** argv);
 int loop();
@@ -54,8 +46,15 @@ void cmd_trunc(const char* path, size_t count);
 void cmd_fsinfo();
 void cmd_help();
 
+size_t parse_input(char* input, char** output, size_t max_outputs);
 void print_fs_error(int fs_error_code);
 void absolute_path(const char* path, char* result);
+
+int real_init_create(void ** result_state);
+int real_init_open(void ** result_state);
+int real_read(void* state, void* buffer, size_t position, size_t size);
+int real_write(void* state, const void* buffer, size_t position, size_t size);
+int real_close(void* state);
 
 int main(int argc, char** argv)
 {      
@@ -66,23 +65,6 @@ int main(int argc, char** argv)
     cleanup();
     
     return 0;
-}
-
-size_t parse_input(char* input, char** output, size_t max_outputs)
-{
-    size_t len = strlen(input);
-    if (input[len - 1] == '\n') input[len - 1] = 0;
-    
-    size_t current = 0;
-    
-    char* token = strtok(input, " ");
-    while (token != NULL && current < max_outputs)
-    {
-        output[current++] = token;
-        token = strtok(NULL, " ");
-    }
-    
-    return current;
 }
 
 void init(int argc, char** argv)
@@ -692,14 +674,31 @@ void cmd_help()
     puts("export source real_destination - Exports file from file system.");
     puts("edit file - Enters edit mode for specified file.");
     puts("cat file - Prints content of specified file");
-    puts("ls [path] [-ds] - Lists specified directory. If path not specified then current directory is used. Flag -d - show detailed information (node index, links count). Flag -s - show size of the files and directories.");
+    puts("ls [path] [-ds] - Lists specified directory. If path not specified then current directory is used. Flag -d - show detailed information (node index, links count, modification time). Flag -s - show size of the files and directories.");
     puts("cd dir - Change current directory.");
     puts("pwd - Prints path to current directory.");
     puts("exp file bytes - Expands file by specified amount of bytes");
     puts("trunc file bytes - Truncates file by specified amount of bytes");
     puts("fsinfo - Displays info about file system");
     puts("exit - Closes file system and exists application.");
-    puts("help - Displays help");
+    puts("help - Displays help.");
+}
+
+size_t parse_input(char* input, char** output, size_t max_outputs)
+{
+    size_t len = strlen(input);
+    if (input[len - 1] == '\n') input[len - 1] = 0;
+    
+    size_t current = 0;
+    
+    char* token = strtok(input, " ");
+    while (token != NULL && current < max_outputs)
+    {
+        output[current++] = token;
+        token = strtok(NULL, " ");
+    }
+    
+    return current;
 }
 
 void print_fs_error(int fs_error_code)
@@ -749,6 +748,7 @@ int real_init_create(void** result_state)
     
     return FS_OK;
 }
+
 int real_init_open(void** result_state)
 {
     FILE* file = fopen(filename, "r+");
@@ -759,6 +759,7 @@ int real_init_open(void** result_state)
     
     return FS_OK;
 }
+
 int real_read(void* state, void* buffer, size_t position, size_t size)
 {
     FILE* file = (FILE*)state;
@@ -770,6 +771,7 @@ int real_read(void* state, void* buffer, size_t position, size_t size)
     
     return FS_OK;
 }
+
 int real_write(void* state, const void* buffer, size_t position, size_t size)
 {
     FILE* file = (FILE*)state;
@@ -781,6 +783,7 @@ int real_write(void* state, const void* buffer, size_t position, size_t size)
     
     return FS_OK;
 }
+
 int real_close(void* state)
 {
     FILE* file = (FILE*)state;
