@@ -493,6 +493,7 @@ int fs_file_open(fs_t* fs, const char* path, uint8_t flags, fs_file_t* result)
         result->current_cluster = node_data.cluster_index;
         result->current_cluster_pos = 0;
         result->size = node_data.size;
+        result->is_opened = 1;
     }
     else if (status == FS_FIND_FILE)
     {
@@ -527,14 +528,13 @@ int fs_file_open(fs_t* fs, const char* path, uint8_t flags, fs_file_t* result)
         }
         
         result->size = node_data.size;
+        result->is_opened = 1;
         
         if (flags & FS_APPEND)
         {
             FS_CHECK_ERROR(fs_file_seek(fs, result, FS_SEEK_END, 0));
         }
     }
-    
-    result->is_opened = 1;
     
     return FS_OK;
 }

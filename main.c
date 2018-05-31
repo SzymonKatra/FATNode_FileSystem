@@ -40,6 +40,7 @@ void cmd_rm(const char* path);
 void cmd_import(const char* real_source, const char* destination);
 void cmd_export(const char* source, const char* real_destination);
 void cmd_edit(const char* path);
+void cmd_cat(const char* path);
 void cmd_ls(const char* path, int show_node, int show_size);
 void cmd_cd(const char* path);
 void cmd_pwd();
@@ -60,7 +61,7 @@ int main(int argc, char** argv)
     while (1)
     {
         printf(COLOR_RESET);
-        printf("$ ");
+        printf(COLOR_GREEN"%s"COLOR_RESET"$ ", current_dir);
         fgets(cmd, MAX_COMMAND_LEN, stdin);
         size_t args_count = parser_parse(cmd, args, MAX_COMMAND_ARGS);
         
@@ -161,6 +162,16 @@ int main(int argc, char** argv)
             }
             
             cmd_edit(args[1]);
+        }
+        else if (strcmp(args[0], "cat") == 0)
+        {
+            if (args_count < 2)
+            {
+                puts("cat requires 1 argument");
+                continue;
+            }
+            
+            cmd_cat(args[1]);
         }
         else if (strcmp(args[0], "exp") == 0)
         {
@@ -265,22 +276,22 @@ void init(int argc, char** argv)
         operations.init = &real_init_create;
         if (fs_create(&operations, atoi(argv[2]), &fs) != FS_OK)
         {
-            puts("Error occurred while creating filesystem");
+            puts("Error occurred while creating file system");
             exit(-1);
         }
         
-        puts("Filesystem successfully created");
+        puts("File system successfully created");
     }
     else
     {
         operations.init = &real_init_open;
         if (fs_open(&operations, &fs) != FS_OK)
         {
-            puts("Error occured while opening filesystem");
+            puts("Error occured while opening file system");
             exit(-1);
         }
         
-        puts("Filesystem successfully opened");
+        puts("File system successfully opened");
     }
     
     strcpy(current_dir, "/");
@@ -290,11 +301,11 @@ void cleanup()
 {
     if (fs_close(&fs) != FS_OK)
     {
-        puts("Error occured while closing filesystem");
+        puts("Error occured while closing file system");
         exit(-1);
     }
     
-    puts("Filesystem successfully closed");
+    puts("File system successfully closed");
 }
 
 void cmd_cp(const char* source, const char* destination)
@@ -316,7 +327,13 @@ void cmd_cp(const char* source, const char* destination)
     int err = fs_file_read(&fs, &file, buffer, 256, &read);
     while (err != FS_EOF)
     {
-        fs_file_write(&fs, &dst_file, buffer, read, &written);
+        if (err != FS_OK)
+        {
+            print_fs_error(err);
+            return;
+        }
+        
+        HANDLE_FS_ERROR(fs_file_write(&fs, &dst_file, buffer, read, &written));
         
         err = fs_file_read(&fs, &file, buffer, 256, &read);
     }
@@ -459,6 +476,35 @@ void cmd_edit(const char* path)
     cmd_import(TMP_FILENAME, path);
 
     remove(TMP_FILENAME);
+}
+
+void cmd_cat(const char* path)
+{
+    char full_path[FS_PATH_MAX_LENGTH];
+    absolute_path(path, full_path);
+    
+    fs_file_t file;
+    HANDLE_FS_ERROR(fs_file_open(&fs, full_path, 0, &file));
+    
+    char buffer[256];
+    size_t read;
+    int err = fs_file_read(&fs, &file, buffer, 256, &read);
+    while (err != FS_EOF)
+    {
+        if (err != FS_OK)
+        {
+            print_fs_error(err);
+            return;
+        }
+        
+        for (size_t i = 0; i < read; i++) putchar(buffer[i]);
+        
+        err = fs_file_read(&fs, &file, buffer, 256, &read);
+    }
+    
+    HANDLE_FS_ERROR(fs_file_close(&fs, &file));
+
+    putchar('\n');
 }
 
 void cmd_ls(const char* path, int show_node, int show_size)
@@ -608,143 +654,6 @@ void absolute_path(const char* path, char* result)
     {
         strcpy(result, path);
     }
-}
-
-int test()
-{
-    fs_disk_operations_t operations;
-    //operations.init = &real_init_create;
-    operations.init = &real_init_open;
-    operations.read = &real_read;
-    operations.write = &real_write;
-    operations.close = &real_close;
-    
-    fs_t filesystem;
-    
-    /*if (fs_create(&operations, 16 * 1024, &filesystem) != FS_OK)
-    {
-        printf("Error while creating filesystem!\n");
-        return -1;
-    }*/
-    //fs_create(&operations, 16 * 1024, &filesystem);
-    fs_open(&operations, &filesystem);
-    fs_mkdir(&filesystem, "/dupa");
-    fs_mkdir(&filesystem, "/aaaa");
-    fs_mkdir(&filesystem, "/bbbb");
-    fs_mkdir(&filesystem, "/cccc");
-    fs_mkdir(&filesystem, "/cccc/c/");
-    fs_mkdir(&filesystem, "/cccc/d");
-    fs_mkdir(&filesystem, "/cccc/ddvvvvvvvv");
-    
-    uint32_t cnt;
-    fs_dir_entries_count(&filesystem, "/", &cnt);
-    printf("%d\n", cnt);
-    fs_dir_entries_count(&filesystem, "/cccc", &cnt);
-    printf("%d\n", cnt);
-    fs_dir_entries_count(&filesystem, "/cccc/c", &cnt);
-    printf("%d\n", cnt);
-    
-    fs_file_t f;
-    fs_file_open(&filesystem, "/cccc/ssss", FS_CREATE, &f);
-    
-    size_t written, read;
-    char buffer[555];
-    memset(buffer, 0xEB, 555);
-    fs_file_write(&filesystem, &f, buffer, 555, &written);
-    fs_file_close(&filesystem, &f);
-    
-    printf("bytes written: %ld\n", written);
-    
-    fs_file_open(&filesystem, "/cccc/ssss", FS_CREATE, &f);
-    fs_file_close(&filesystem, &f);
-    
-    memset(buffer, 0xAB, 134);
-    
-    fs_file_open(&filesystem, "/aaaa/x", FS_CREATE, &f);
-    fs_file_write(&filesystem, &f, buffer, 35, &written);
-    fs_file_close(&filesystem, &f);
-    
-    memset(buffer, 0xFF, 100);
-    
-    fs_file_open(&filesystem, "/cccc/xddddd", FS_CREATE, &f);
-    fs_file_write(&filesystem, &f, buffer, 3, &written);
-    fs_file_close(&filesystem, &f);
-    
-    memset(buffer, 0xCD, 134);
-    
-    fs_file_open(&filesystem, "/aaaa/x", FS_APPEND, &f);
-    fs_file_write(&filesystem, &f, buffer, 134, &written);
-    fs_file_close(&filesystem, &f);
-    
-    printf("bytes written: %ld\n", written);
-    
-    fs_file_open(&filesystem, "/aaaa/x", 0, &f);
-    fs_file_read(&filesystem, &f, buffer, 40, &read);
-    fs_file_close(&filesystem, &f);
-    
-    printf("bytes read: %ld\n", read);
-    
-    const char* tekst = "Wsadzmy do naszego pliku jakis przykladowy tekst....";
-    size_t len = strlen(tekst) + 1;
-    
-    fs_file_open(&filesystem, "/plik1.txt", FS_CREATE, &f);
-    fs_file_write(&filesystem, &f, tekst, len, &written);
-    fs_file_close(&filesystem, &f);
-    
-    fs_dir_entry_t entry;
-    printf("entryerr: %d\n",fs_entry_info(&filesystem, "/plik1.txt", &entry));
-    printf("ENTRY: %d\n", entry.node);
-    
-    char buf[100];
-    fs_file_open(&filesystem, "/plik1.txt", 0, &f);
-    fs_file_read(&filesystem, &f, buf, len, &read);
-    fs_file_close(&filesystem, &f);
-    
-    puts(buf);
-    memset(buf, 0xAA, 100);
-    
-    fs_link(&filesystem, "/aaaa/link.dupa", entry.node);
-    
-    fs_file_open(&filesystem, "/aaaa/link.dupa", 0, &f);
-    fs_file_read(&filesystem, &f, buf, len, &read);
-    fs_file_close(&filesystem, &f);
-    
-    puts(buf);
-    
-    fs_remove(&filesystem, "/aaaa/link.dupa");
-    fs_remove(&filesystem, "/plik1.txt");
-    fs_remove(&filesystem, "/aaaa/x");
-    fs_remove(&filesystem, "/cccc/xddddd");
-    fs_remove(&filesystem, "/cccc/ssss");
-    fs_remove(&filesystem, "/cccc/c");
-    fs_entry_info(&filesystem, "/cccc", &entry);
-    fs_link(&filesystem, "/linkujemy", entry.node);
-    fs_mkdir(&filesystem, "/dddddddddd");
-    fs_remove(&filesystem, "/dddddddddd");
-    //fs_remove(&filesystem ,"/cccc");
-    fs_remove(&filesystem, "/linkujemy");
-    fs_remove(&filesystem, "/d");
-    fs_remove(&filesystem, "/aaaa");
-    fs_remove(&filesystem, "/cccc");
-    fs_remove(&filesystem, "/bbbb");
-    fs_remove(&filesystem, "/dupa");
-    fs_mkdir(&filesystem, "/a/b/c/d/");
-    fs_remove(&filesystem, "/a");
-    
-    printf("er %d\n", fs_dir_entries_count(&filesystem, "/cccc/ssss", &cnt));
-    printf("%d\n", cnt);
-    
-    fs_dir_entry_t entries[256];
-    size_t count;
-    
-    fs_dir_list(&filesystem, "/", entries, &count, 256);
-    for (size_t i = 0; i < count; i++) printf("%s %d %d\n", entries[i].name, entries[i].node, entries[i].node_type);
-    
-    
-    
-    fs_close(&filesystem);
-    
-    return 0;
 }
 
 int real_init_create(void** result_state)
