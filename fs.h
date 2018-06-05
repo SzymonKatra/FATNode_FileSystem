@@ -1,6 +1,9 @@
 #ifndef FS_H_
 #define FS_H_
 
+#include <stdint.h>
+#include <stddef.h>
+
 #define FS_OK 0
 #define FS_DISK_INIT_ERROR      1
 #define FS_DISK_READ_ERROR      2
@@ -32,9 +35,6 @@
 #define FS_SEEK_BEGIN   1
 #define FS_SEEK_CURRENT 2
 #define FS_SEEK_END     3
-
-#include <stdint.h>
-#include <stddef.h>
 
 typedef int (*disk_init)(void** result_state);
 typedef int (*disk_read)(void* state, void* buffer, size_t position, size_t size);

@@ -384,7 +384,17 @@ void cmd_touch(const char* path)
     absolute_path(path, final_path);
     
     fs_file_t file;
-    HANDLE_FS_ERROR(fs_file_open(&fs, final_path, FS_CREATE, &file));
+    
+    int error = fs_file_open(&fs, final_path, 0, &file);
+    if (error == FS_NOT_EXISTS)
+    {
+        HANDLE_FS_ERROR(fs_file_open(&fs, final_path, FS_CREATE, &file));
+    }
+    else if (error != FS_OK)
+    {
+        HANDLE_FS_ERROR(error);
+    }
+    
     HANDLE_FS_ERROR(fs_file_close(&fs, &file));
 }
 
@@ -652,6 +662,7 @@ void cmd_fsinfo()
     fs_info_t info;
     HANDLE_FS_ERROR(fs_info(&fs, &info));
     
+    printf("Sector size: %d\n", FS_SECTOR_SIZE);
     printf("Sectors (total / boot / allocation table): %d / %d / %d\n", info.sectors, 1, info.table_sectors);
     printf("Clusters (total / free / node / data): %d / %d / %d / %d\n", info.clusters, info.free_clusters, info.node_clusters, info.data_clusters);
     printf("Nodes (used / allocated): %d / %d\n", info.nodes, info.allocated_nodes);
@@ -664,24 +675,24 @@ void cmd_fsinfo()
 
 void cmd_help()
 {
-    puts("cp source destination - Copies file from source to destination.");
-    puts("mv source destination - Moves file from soruce to destination.");
-    puts("mkdir path - Creates directory. Allows nested directories.");
-    puts("touch path - Creates empty file.");
-    puts("ln file_path link_name - Creates hard link of link_name to file_path.");
-    puts("rm path - Removes file or directory recursively.");
-    puts("import real_source destination - Imports external file into file system.");
-    puts("export source real_destination - Exports file from file system.");
-    puts("edit file - Enters edit mode for specified file.");
-    puts("cat file - Prints content of specified file");
-    puts("ls [path] [-ds] - Lists specified directory. If path not specified then current directory is used. Flag -d - show detailed information (node index, links count, modification time). Flag -s - show size of the files and directories.");
-    puts("cd dir - Change current directory.");
-    puts("pwd - Prints path to current directory.");
-    puts("exp file bytes - Expands file by specified amount of bytes");
-    puts("trunc file bytes - Truncates file by specified amount of bytes");
-    puts("fsinfo - Displays info about file system");
-    puts("exit - Closes file system and exists application.");
-    puts("help - Displays help.");
+    puts(COLOR_CYAN"cp source destination"COLOR_GREEN" - Copies file from source to destination.");
+    puts(COLOR_CYAN"mv source destination"COLOR_GREEN" - Moves file from soruce to destination.");
+    puts(COLOR_CYAN"mkdir path"COLOR_GREEN" - Creates directory. Allows nested directories.");
+    puts(COLOR_CYAN"touch path"COLOR_GREEN" - Creates empty file.");
+    puts(COLOR_CYAN"ln file_path link_name"COLOR_GREEN" - Creates hard link of link_name to file_path.");
+    puts(COLOR_CYAN"rm path"COLOR_GREEN" - Removes file or directory recursively.");
+    puts(COLOR_CYAN"import real_source destination"COLOR_GREEN" - Imports external file into file system.");
+    puts(COLOR_CYAN"export source real_destination"COLOR_GREEN" - Exports file from file system.");
+    puts(COLOR_CYAN"edit file"COLOR_GREEN" - Enters edit mode for specified file.");
+    puts(COLOR_CYAN"cat file"COLOR_GREEN" - Prints content of specified file");
+    puts(COLOR_CYAN"ls [path] [-ds]"COLOR_GREEN" - Lists specified directory. If path not specified then current directory is used. Flag -d - show detailed information (node index, links count, modification time). Flag -s - show size of the files and directories.");
+    puts(COLOR_CYAN"cd dir"COLOR_GREEN" - Change current directory.");
+    puts(COLOR_CYAN"pwd"COLOR_GREEN" - Prints path of current directory.");
+    puts(COLOR_CYAN"exp file bytes"COLOR_GREEN" - Expands file by specified amount of bytes");
+    puts(COLOR_CYAN"trunc file bytes"COLOR_GREEN" - Truncates file by specified amount of bytes");
+    puts(COLOR_CYAN"fsinfo"COLOR_GREEN" - Displays info about file system");
+    puts(COLOR_CYAN"exit"COLOR_GREEN" - Closes file system and exists application.");
+    puts(COLOR_CYAN"help"COLOR_GREEN" - Displays help.");
 }
 
 size_t parse_input(char* input, char** output, size_t max_outputs)
