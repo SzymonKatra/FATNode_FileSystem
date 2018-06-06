@@ -69,4 +69,4 @@ File system can be also used on real devices. In order to perform that, pass dev
 ```sudo ./fs /dev/sdb1 16384```
 
 ## Notes
-This implementation is not well tested and usage for any real application is discouraged. Project has been done only for educational purposes.
+This implementation is not well tested and usage for any real application is discouraged. Project has been made only for educational purposes.
