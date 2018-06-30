@@ -17,7 +17,7 @@ Bootstrap sector is followed by **allocation table** which consist of few sector
 * **```0xFFFFFFFE```** - end of file
 * **```0xFFFFFFFF```** - invalid cluster
 * **```0xFFFFFF00```** - empty cluster holding nodes
-* **```0xFFFFFF__```** - cluster holding nodes, __ indicates how much node structures are in use
+* **```0xFFFFFF__```** - cluster holding nodes, __ indicates how many node structures are in use
 * **```0xFFFFFF08```** - full cluster holding nodes
 * **other value** - indicates index of next cluster containing continuation of data stored in this cluster
 
