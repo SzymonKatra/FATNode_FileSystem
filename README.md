@@ -4,7 +4,7 @@
 This is an implementation of a file system which I designed for my operating system classes. It combines idea of File Allocation Table and UNIX inodes.
 
 ## Design
-Entire disk is divided into small sectors of preconceived size (configured by FS_SECTOR_SIZE macro, 128 in current implementation).
+Entire disk is divided into small sectors of predefined size (configured by FS_SECTOR_SIZE macro, 128 in current implementation).
 
 The first sector is called **bootstrap sector** and contains all informations about file system neccessary to open it, including:
 * Number of sectors
